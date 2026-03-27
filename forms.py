@@ -1,7 +1,7 @@
-"""All tkinter UI: configure dialog, session feedback form, history window."""
+"""All tkinter UI: configure dialog, session feedback form, history window,
+breathing exercise, and 5-4-3-2-1 grounding."""
 
-import os
-import subprocess
+import math
 import tkinter as tk
 from tkinter import ttk
 
@@ -413,3 +413,264 @@ def show_history_window() -> None:
 
     root.mainloop()
     # No root.destroy() – destroy is called by Close button or window close
+
+
+# ─── Breathing exercise ───────────────────────────────────────────────────────
+
+def show_breathing_exercise() -> None:
+    """
+    1-minute box-breathing exercise: 4 s inhale · 4 s hold · 4 s exhale · 4 s hold.
+
+    Box breathing (also called 4-4-4-4 or square breathing) is well-studied
+    for activating the parasympathetic nervous system, reducing cortisol, and
+    improving HRV.  See: Zaccaro et al. (2018) Front. Hum. Neurosci.
+    """
+    TOTAL  = 60
+    PHASES = [                  # (label, duration_s, kind)
+        ("BREATHE IN",  4, 0),  # 0 → expand circle
+        ("HOLD",        4, 1),  # 1 → hold at MAX
+        ("BREATHE OUT", 4, 2),  # 2 → shrink circle
+        ("HOLD",        4, 3),  # 3 → hold at MIN
+    ]
+    CYCLE              = sum(p[1] for p in PHASES)   # 16 s  → 3.75 cycles
+    MIN_R, MAX_R       = 42, 100
+    BG, CLR, CLR_GLOW  = "#0d1b2a", "#4fa3d9", "#1d4a72"
+    CW = CH            = 260
+
+    root = tk.Tk()
+    root.title("Breathing Exercise")
+    root.geometry("310x440")
+    root.resizable(False, False)
+    root.configure(bg=BG)
+    _bring_to_front(root)
+
+    # ── Header ────────────────────────────────────────────────────────────
+    tk.Label(root, text="Box Breathing", font=("", 17, "bold"),
+             bg=BG, fg="white").pack(pady=(18, 3))
+    tk.Label(root, text="Inhale 4 s  ·  Hold 4 s  ·  Exhale 4 s  ·  Hold 4 s",
+             font=("", 10), bg=BG, fg="#6a9ec0").pack()
+
+    # ── Animated canvas ───────────────────────────────────────────────────
+    canvas = tk.Canvas(root, width=CW, height=CH, bg=BG, highlightthickness=0)
+    canvas.pack(pady=(8, 0))
+    cx = cy = CW // 2
+
+    pt_phase = canvas.create_text(cx, cy - 16, text="", font=("", 15, "bold"), fill="white")
+    pt_count = canvas.create_text(cx, cy + 26, text="", font=("", 40, "bold"), fill="white")
+
+    # ── Progress bar (hand-drawn for dark-theme consistency) ──────────────
+    pb_cv = tk.Canvas(root, width=260, height=6, bg=BG, highlightthickness=0)
+    pb_cv.pack(pady=(4, 0))
+    pb_cv.create_rectangle(0, 0, 260, 6, fill="#1d3a52", outline="")
+    pb_bar = pb_cv.create_rectangle(0, 0, 0, 6, fill=CLR, outline="")
+
+    time_lbl = tk.Label(root, text="1:00 remaining", font=("", 11), bg=BG, fg="#6a9ec0")
+    time_lbl.pack(pady=(5, 8))
+
+    running = [True]
+    elapsed = [0.0]
+
+    def _draw(r: int) -> None:
+        canvas.delete("circle")
+        gr = r + 16
+        canvas.create_oval(cx-gr, cy-gr, cx+gr, cy+gr,
+                           fill=CLR_GLOW, outline="", tags="circle")
+        canvas.create_oval(cx-r,  cy-r,  cx+r,  cy+r,
+                           fill=CLR,      outline="", tags="circle")
+        canvas.tag_raise(pt_phase)
+        canvas.tag_raise(pt_count)
+
+    def _stop() -> None:
+        running[0] = False
+        root.quit()
+
+    stop_btn = tk.Button(root, text="Stop", command=_stop,
+                          bg="#1d3a52", fg="white", relief="flat",
+                          activebackground="#2a5272", activeforeground="white",
+                          font=("", 12), padx=18, pady=6, cursor="hand2", bd=0)
+    stop_btn.pack(pady=(0, 14))
+
+    def _tick() -> None:
+        if not running[0]:
+            return
+        elapsed[0] = min(elapsed[0] + 0.05, float(TOTAL))
+        t = elapsed[0]
+
+        if t >= TOTAL:
+            # ── Completion screen ─────────────────────────────────────────
+            running[0] = False
+            canvas.destroy()
+            pb_cv.destroy()
+            time_lbl.destroy()
+            stop_btn.destroy()
+            done = tk.Frame(root, bg=BG)
+            done.pack(expand=True, fill=tk.BOTH)
+            tk.Label(done, text="🎉", font=("", 52), bg=BG).pack(pady=(16, 6))
+            tk.Label(done, text="Well done!", font=("", 18, "bold"),
+                     bg=BG, fg="white").pack()
+            tk.Label(done, text="One minute of box breathing complete.",
+                     font=("", 11), bg=BG, fg="#6a9ec0").pack(pady=(4, 20))
+            tk.Button(done, text="Close", command=root.quit,
+                       bg="#1d3a52", fg="white", relief="flat",
+                       activebackground="#2a5272", activeforeground="white",
+                       font=("", 12), padx=18, pady=6, cursor="hand2", bd=0).pack()
+            return
+
+        # ── Current phase ─────────────────────────────────────────────────
+        t_cycle = t % CYCLE
+        accum   = 0.0
+        idx, t_phase = 0, 0.0
+        for i, (_, dur, _) in enumerate(PHASES):
+            if t_cycle < accum + dur:
+                idx     = i
+                t_phase = t_cycle - accum
+                break
+            accum += dur
+
+        label, dur, kind = PHASES[idx]
+        prog = t_phase / dur
+
+        r = int(
+            MIN_R + (MAX_R - MIN_R) * prog   if kind == 0 else
+            MAX_R                             if kind == 1 else
+            MAX_R - (MAX_R - MIN_R) * prog   if kind == 2 else
+            MIN_R
+        )
+
+        _draw(r)
+        canvas.itemconfig(pt_phase, text=label)
+        canvas.itemconfig(pt_count, text=str(max(1, math.ceil(dur - t_phase))))
+
+        pb_cv.coords(pb_bar, 0, 0, int(260 * t / TOTAL), 6)
+        rem = int(TOTAL - t)
+        time_lbl.config(text=f"0:{rem:02d} remaining")
+        root.after(50, _tick)
+
+    _draw(MIN_R)
+    canvas.itemconfig(pt_phase, text=PHASES[0][0])
+    canvas.itemconfig(pt_count, text=str(PHASES[0][1]))
+    root.protocol("WM_DELETE_WINDOW", _stop)
+    root.after(100, _tick)
+    root.mainloop()
+    root.destroy()
+
+
+# ─── 5-4-3-2-1 grounding ─────────────────────────────────────────────────────
+
+def show_grounding_exercise() -> None:
+    """
+    Guide through the 5-4-3-2-1 sensory grounding technique.
+
+    Grounding brings attention back to the present moment via the five senses.
+    The technique is widely used in CBT and trauma-informed care to interrupt
+    anxiety or dissociation.  Each step shows an emoji cue and numbered entry
+    fields to write down what you notice.
+    """
+    STEPS = [
+        (5, "👁️",  "5 things you can SEE",
+         "Look around and name 5 things you can see right now."),
+        (4, "🖐️",  "4 things you can TOUCH",
+         "Notice 4 things you can physically feel — textures, temperature, weight."),
+        (3, "👂",  "3 things you can HEAR",
+         "Listen carefully and identify 3 distinct sounds around you."),
+        (2, "👃",  "2 things you can SMELL",
+         "Take a slow breath and notice 2 things you can smell."),
+        (1, "👅",  "1 thing you can TASTE",
+         "Focus inward — what is one thing you can taste right now?"),
+    ]
+
+    root = tk.Tk()
+    root.title("5-4-3-2-1 Grounding")
+    root.geometry("430x530")
+    root.resizable(False, False)
+    _theme(root)
+    _bring_to_front(root)
+
+    step = [0]
+
+    # ── Header ────────────────────────────────────────────────────────────
+    header = ttk.Frame(root, padding=(24, 16, 24, 0))
+    header.pack(fill=tk.X)
+
+    step_lbl = ttk.Label(header, text="Step 1 of 5",
+                          font=("", 11), foreground="gray")
+    step_lbl.pack()
+
+    # tk.Label for emoji so we can control bg colour precisely
+    emoji_lbl = tk.Label(header, text=STEPS[0][1], font=("", 60))
+    emoji_lbl.pack(pady=(2, 0))
+
+    title_lbl = ttk.Label(header, text=STEPS[0][2], font=("", 14, "bold"))
+    title_lbl.pack(pady=(4, 2))
+
+    instr_lbl = ttk.Label(header, text=STEPS[0][3], font=("", 12),
+                           foreground="gray", wraplength=370, justify="center")
+    instr_lbl.pack(pady=(0, 10))
+
+    sep = ttk.Separator(root, orient="horizontal")
+    sep.pack(fill=tk.X, padx=24)
+
+    # ── Entry fields (rebuilt for each step) ─────────────────────────────
+    entries_pane = ttk.Frame(root, padding=(32, 10, 32, 4))
+    entries_pane.pack(fill=tk.X)
+
+    def _build_entries(n: int) -> None:
+        for w in entries_pane.winfo_children():
+            w.destroy()
+        for i in range(n):
+            row = ttk.Frame(entries_pane)
+            row.pack(fill=tk.X, pady=4)
+            ttk.Label(row, text=f"{i + 1}.", width=3, font=("", 13)).pack(side=tk.LEFT)
+            e = ttk.Entry(row, font=("", 13))
+            e.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # Focus the first entry automatically
+        rows = entries_pane.winfo_children()
+        if rows:
+            for w in rows[0].winfo_children():
+                if isinstance(w, ttk.Entry):
+                    w.focus_set()
+                    break
+
+    _build_entries(STEPS[0][0])
+
+    # ── Footer ────────────────────────────────────────────────────────────
+    footer = ttk.Frame(root, padding=(24, 8, 24, 18))
+    footer.pack(fill=tk.X, side=tk.BOTTOM)
+
+    next_var = tk.StringVar(value="Next →")
+    next_btn = ttk.Button(footer, textvariable=next_var, command=lambda: _advance())
+    next_btn.pack(side=tk.RIGHT)
+
+    def _advance() -> None:
+        step[0] += 1
+        if step[0] >= len(STEPS):
+            # ── Completion screen ─────────────────────────────────────────
+            header.pack_forget()
+            entries_pane.pack_forget()
+            sep.pack_forget()
+            done = ttk.Frame(root, padding=36)
+            done.pack(expand=True)
+            ttk.Label(done, text="🎉", font=("", 64)).pack()
+            ttk.Label(done, text="Well done!", font=("", 18, "bold")).pack(pady=(8, 4))
+            ttk.Label(done,
+                       text="You've completed the 5-4-3-2-1 grounding exercise.\n"
+                            "Take a moment to notice how you feel.",
+                       font=("", 12), foreground="gray",
+                       justify="center", wraplength=340).pack(pady=(0, 4))
+            next_var.set("Close")
+            next_btn.config(command=root.destroy)
+            return
+
+        n, emoji, title, instr = STEPS[step[0]]
+        step_lbl.config(text=f"Step {step[0] + 1} of {len(STEPS)}")
+        emoji_lbl.config(text=emoji)
+        title_lbl.config(text=title)
+        instr_lbl.config(text=instr)
+        _build_entries(n)
+
+        if step[0] == len(STEPS) - 1:
+            next_var.set("Finish ✓")
+
+    root.bind("<Return>", lambda _: _advance())
+    root.protocol("WM_DELETE_WINDOW", root.destroy)
+    root.mainloop()

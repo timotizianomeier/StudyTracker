@@ -12,7 +12,8 @@ import time
 import rumps
 
 import db
-from forms import show_configure_window, show_history_window, show_session_form
+from forms import (show_breathing_exercise, show_configure_window,
+                   show_grounding_exercise, show_history_window, show_session_form)
 
 
 class PomodoroApp(rumps.App):
@@ -43,6 +44,15 @@ class PomodoroApp(rumps.App):
         self._hist_item   = rumps.MenuItem("📋  View History",    callback=self._view_history)
         self._quit_item   = rumps.MenuItem("Quit",               callback=rumps.quit_application)
 
+        # Meditation submenu
+        self._meditate_item = rumps.MenuItem("🧘  Meditate")
+        self._meditate_item["breathing"] = rumps.MenuItem(
+            "💨  Breathing Exercise (1 min)", callback=self._breathing_exercise
+        )
+        self._meditate_item["grounding"] = rumps.MenuItem(
+            "🌿  5-4-3-2-1 Grounding", callback=self._grounding_exercise
+        )
+
         self.menu = [
             self._status_item,
             None,
@@ -53,6 +63,7 @@ class PomodoroApp(rumps.App):
             self._clock_item,
             self._config_item,
             self._hist_item,
+            self._meditate_item,
             None,
             self._quit_item,
         ]
@@ -206,6 +217,12 @@ class PomodoroApp(rumps.App):
             )
             return
         show_history_window()
+
+    def _breathing_exercise(self, _: rumps.MenuItem) -> None:
+        show_breathing_exercise()
+
+    def _grounding_exercise(self, _: rumps.MenuItem) -> None:
+        show_grounding_exercise()
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────

@@ -19,6 +19,9 @@ A macOS menu bar app for tracking focused work sessions. Built with Python, it l
   - Average focus by time of day (morning / afternoon / evening / night)
   - Average focus by topic
   - Total sessions, total focus time, overall average focus rating
+- **Guided meditations** accessible any time from the menu:
+  - 💨 **Breathing Exercise (1 min)** — animated box breathing (4 s inhale · 4 s hold · 4 s exhale · 4 s hold), backed by research on HRV and parasympathetic activation
+  - 🌿 **5-4-3-2-1 Grounding** — step-by-step sensory grounding with emoji cues (👁️ see · 🖐️ touch · 👂 hear · 👃 smell · 👅 taste) and optional text fields to write down what you notice
 
 ---
 
@@ -60,6 +63,9 @@ The `🍅` icon will appear in your menu bar. The SQLite database is created aut
 | `✓ Show countdown` | Toggles the clock display next to the icon; when off, only `🍅` (or `⏸` if paused) is shown |
 | `⚙ Configure…` | Slider to set session length from 5 to 55 minutes |
 | `📋 View History` | Open the history & stats window |
+| `🧘 Meditate ▶` | Submenu with two guided meditations (available any time) |
+| `  💨 Breathing Exercise (1 min)` | Animated box-breathing timer with dark-mode UI |
+| `  🌿 5-4-3-2-1 Grounding` | Step-by-step sensory grounding with emoji cues and text fields |
 | `Quit` | Exit the app |
 
 ### Menu bar icon guide
