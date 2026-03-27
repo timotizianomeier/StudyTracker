@@ -42,14 +42,15 @@ def _theme(root: tk.Tk) -> ttk.Style:
 
 def show_configure_window(current_minutes: int) -> int | None:
     """
-    Simple dialog to change session duration.
+    Slider dialog to change session duration (5–55 min).
     Returns the new duration (int) or None if cancelled.
     """
+    _MIN, _MAX = 5, 55
     result: list[int | None] = [None]
 
     root = tk.Tk()
     root.title("Configure Session")
-    root.geometry("320x160")
+    root.geometry("360x210")
     root.resizable(False, False)
     _theme(root)
     _bring_to_front(root)
@@ -57,30 +58,39 @@ def show_configure_window(current_minutes: int) -> int | None:
     frame = ttk.Frame(root, padding=24)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    ttk.Label(frame, text="Session length (minutes):", font=("", 13)).grid(
-        row=0, column=0, columnspan=3, pady=(0, 12)
-    )
+    ttk.Label(frame, text="Session length", font=("", 13)).pack()
 
-    dur_var = tk.IntVar(value=current_minutes)
-    spin = ttk.Spinbox(
-        frame, from_=1, to=180, textvariable=dur_var,
-        width=6, font=("", 18), justify="center"
-    )
-    spin.grid(row=1, column=0, columnspan=3, pady=(0, 18))
+    # Clamp to the valid range in case a legacy value is outside it
+    clamped = max(_MIN, min(_MAX, current_minutes))
+    dur_var = tk.IntVar(value=clamped)
+
+    val_label = ttk.Label(frame, text=f"{clamped} min", font=("", 26, "bold"))
+    val_label.pack(pady=(4, 10))
+
+    def _on_slider(val: str) -> None:
+        v = int(float(val))
+        val_label.config(text=f"{v} min")
+
+    slider_row = ttk.Frame(frame)
+    slider_row.pack(fill=tk.X, pady=(0, 6))
+    ttk.Label(slider_row, text=str(_MIN), foreground="gray").pack(side=tk.LEFT)
+    ttk.Scale(
+        slider_row, from_=_MIN, to=_MAX, orient=tk.HORIZONTAL,
+        variable=dur_var, command=_on_slider, length=240,
+    ).pack(side=tk.LEFT, padx=8, expand=True, fill=tk.X)
+    ttk.Label(slider_row, text=str(_MAX), foreground="gray").pack(side=tk.LEFT)
 
     def _ok() -> None:
-        try:
-            val = int(dur_var.get())
-            result[0] = max(1, min(180, val))
-        except (ValueError, tk.TclError):
-            result[0] = current_minutes
+        result[0] = int(dur_var.get())
         root.quit()
 
     def _cancel() -> None:
         root.quit()
 
-    ttk.Button(frame, text="Cancel", command=_cancel).grid(row=2, column=0, padx=4)
-    ttk.Button(frame, text="   OK   ", command=_ok).grid(row=2, column=2, padx=4)
+    btn_frame = ttk.Frame(frame)
+    btn_frame.pack(pady=(10, 0))
+    ttk.Button(btn_frame, text="Cancel", command=_cancel).pack(side=tk.LEFT, padx=6)
+    ttk.Button(btn_frame, text="   OK   ", command=_ok).pack(side=tk.LEFT, padx=6)
 
     root.protocol("WM_DELETE_WINDOW", _cancel)
     root.bind("<Return>", lambda _: _ok())

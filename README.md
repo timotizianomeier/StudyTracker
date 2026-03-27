@@ -1,15 +1,17 @@
 # 🍅 Pomodoro Tracker
 
-A macOS menu bar app for tracking focused work sessions. Built with Python, it lives quietly in your menu bar, runs timed Pomodoro sessions, fires a native macOS notification when time is up, and prompts you to log how the session went. All data is stored locally in SQLite — no network, no accounts.
+A macOS menu bar app for tracking focused work sessions. Built with Python, it lives quietly in your menu bar, runs timed Pomodoro sessions, fires a native macOS notification with sound when time is up, and prompts you to log how the session went. All data is stored locally in SQLite — no network, no accounts.
 
 ---
 
 ## What it does
 
 - **Pomodoro timer** in the menu bar with a live countdown (`🍅 24:59`)
-- **Configurable session length** (default 25 min, supports 1–180 min)
-- **Native macOS notification** with sound when the session ends
-- **Post-session form** asking:
+- **Configurable session length** via a slider (5–55 min, default 25 min)
+- **Pause & resume** a session at any time without losing progress
+- **Toggle the countdown display** — show only the 🍅 icon if you find the clock distracting
+- **Native macOS notification with sound** when the session ends
+- **Post-session popup form** asking:
   - Focus rating (1–10 slider)
   - Topic / project label (optional free text)
   - Whether you got distracted, and if so why
@@ -52,18 +54,30 @@ The `🍅` icon will appear in your menu bar. The SQLite database is created aut
 | Menu item | What it does |
 |---|---|
 | `▶ Start Session` | Starts the countdown timer |
-| `⏹ Stop Session` | Cancels the current session (no log entry) |
-| `⚙ Configure…` | Set the session length in minutes |
+| `⏸ Pause Session` | Pauses the timer (timer thread keeps running but time doesn't tick down); label changes to `▶ Resume Session` |
+| `▶ Resume Session` | Resumes a paused session |
+| `⏹ Stop Session` | Cancels the current session (no log entry created) |
+| `✓ Show countdown` | Toggles the clock display next to the icon; when off, only `🍅` (or `⏸` if paused) is shown |
+| `⚙ Configure…` | Slider to set session length from 5 to 55 minutes |
 | `📋 View History` | Open the history & stats window |
 | `Quit` | Exit the app |
+
+### Menu bar icon guide
+
+| Display | Meaning |
+|---|---|
+| `🍅` | Idle — no session running |
+| `🍅 22:14` | Session running, 22 min 14 s remaining |
+| `⏸ 22:14` | Session paused at 22 min 14 s |
+| `⏸` | Session paused (countdown display turned off) |
 
 ### Typical workflow
 
 1. Click `▶ Start Session` and get to work.
 2. The menu bar shows the remaining time (`🍅 22:14`).
-3. When the timer hits zero, a macOS notification plays a sound.
-4. A form pops up — rate your focus, add a topic, note any distractions.
-5. Hit **Save Session** (or **Skip** to discard the log entry).
+3. Need a moment? Click `⏸ Pause Session` — the timer freezes. Click `▶ Resume Session` to continue.
+4. When the timer hits zero, a macOS notification plays a sound and a popup form appears.
+5. Rate your focus, add a topic, note any distractions, then hit **Save Session** (or **Skip** to discard).
 6. Review trends any time via **View History**.
 
 ---
