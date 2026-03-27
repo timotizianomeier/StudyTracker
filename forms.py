@@ -316,8 +316,14 @@ def show_history_window() -> None:
             ),
         )
 
-    tree.tag_configure("even", background="#f7f7f7")
-    tree.tag_configure("odd",  background="#ffffff")
+    style = ttk.Style(root)
+    style.configure("Treeview", foreground="#000000", background="#ffffff",
+                    fieldbackground="#ffffff", rowheight=22)
+    style.configure("Treeview.Heading", foreground="#000000")
+    style.map("Treeview", foreground=[("selected", "#ffffff")])
+
+    tree.tag_configure("even", background="#f0f0f0", foreground="#000000")
+    tree.tag_configure("odd",  background="#ffffff", foreground="#000000")
 
     # Status bar for log tab
     summary = db.get_summary()
