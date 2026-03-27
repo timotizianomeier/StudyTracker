@@ -213,10 +213,25 @@ class PomodoroApp(rumps.App):
         )
 
     def _stop_session(self, _: rumps.MenuItem) -> None:
+        elapsed_seconds = self.session_minutes * 60 - self.time_remaining
         self.is_running = False
         self.is_paused = False
         self.title = self._ICON_IDLE
         self._set_running(False)
+
+        if elapsed_seconds >= 300:   # only log if at least 5 minutes elapsed
+            elapsed_minutes = max(1, round(elapsed_seconds / 60))
+            def _show_form() -> None:
+                result = _run_window("session_form", elapsed_minutes)
+                if result:
+                    db.save_session(
+                        elapsed_minutes,
+                        result["focus"],
+                        result.get("topic"),
+                        result["distracted"],
+                        result.get("reason"),
+                    )
+            threading.Thread(target=_show_form, daemon=True).start()
 
     def _toggle_clock(self, _: rumps.MenuItem) -> None:
         self.show_clock = not self.show_clock
