@@ -34,6 +34,7 @@ class PomodoroApp(rumps.App):
         self._done_queue: queue.Queue[int] = queue.Queue()
 
         # Menu items
+        self._status_item = rumps.MenuItem("No session running")  # always-visible countdown
         self._start_item  = rumps.MenuItem("▶  Start Session",   callback=self._start_session)
         self._pause_item  = rumps.MenuItem("⏸  Pause Session")   # enabled only while running
         self._stop_item   = rumps.MenuItem("⏹  Stop Session")    # enabled only while running
@@ -43,6 +44,8 @@ class PomodoroApp(rumps.App):
         self._quit_item   = rumps.MenuItem("Quit",               callback=rumps.quit_application)
 
         self.menu = [
+            self._status_item,
+            None,
             self._start_item,
             self._pause_item,
             self._stop_item,
@@ -79,12 +82,18 @@ class PomodoroApp(rumps.App):
     def _on_tick(self, _: rumps.Timer) -> None:
         """Main-thread poll: refresh the menu bar title and handle session completion."""
         if self.is_running:
+            m, s = divmod(self.time_remaining, 60)
+            time_str = f"{m:02d}:{s:02d}"
             icon = self._ICON_PAUSED if self.is_paused else self._ICON_IDLE
-            if self.show_clock:
-                m, s = divmod(self.time_remaining, 60)
-                self.title = f"{icon} {m:02d}:{s:02d}"
+
+            # Status item in dropdown always shows the time
+            if self.is_paused:
+                self._status_item.title = f"⏸  {time_str} — paused"
             else:
-                self.title = icon
+                self._status_item.title = f"⏱  {time_str} remaining"
+
+            # Menu bar icon respects the clock-visibility toggle
+            self.title = f"{icon} {time_str}" if self.show_clock else icon
 
         if not self._done_queue.empty():
             duration = self._done_queue.get_nowait()
@@ -142,8 +151,9 @@ class PomodoroApp(rumps.App):
             self._start_item.set_callback(self._start_session)
             self._pause_item.set_callback(None)
             self._stop_item.set_callback(None)
-            # Reset pause label for next session
+            # Reset labels for next session
             self._pause_item.title = "⏸  Pause Session"
+            self._status_item.title = "No session running"
 
     # ── Menu callbacks ────────────────────────────────────────────────────────
 

@@ -11,20 +11,21 @@ import db
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _bring_to_front(root: tk.Tk) -> None:
-    """Reliably raise the window to the front on macOS."""
+    """Reliably raise a tkinter window to the front from a macOS menu bar app.
+
+    rumps runs as a background (LSUIElement) process, so the NSApp is never
+    automatically the active application.  We must explicitly activate it
+    before entering the Tk event loop, otherwise the window is created but
+    remains invisible / non-interactive.
+    """
+    try:
+        from AppKit import NSApp          # always available – rumps depends on pyobjc
+        NSApp.activateIgnoringOtherApps_(True)
+    except Exception:
+        pass
     root.lift()
     root.attributes("-topmost", True)
     root.update()
-    # Use the PID-based osascript approach – works regardless of process name.
-    subprocess.Popen(
-        [
-            "osascript", "-e",
-            f"tell application \"System Events\" to set frontmost of "
-            f"(first process whose unix id is {os.getpid()}) to true",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
     root.after(300, lambda: root.attributes("-topmost", False))
     root.focus_force()
 
@@ -60,9 +61,10 @@ def show_configure_window(current_minutes: int) -> int | None:
 
     ttk.Label(frame, text="Session length", font=("", 13)).pack()
 
-    # Clamp to the valid range in case a legacy value is outside it
+    # Clamp to the valid range in case a legacy value is outside it.
+    # Use DoubleVar – ttk.Scale updates it as a float internally.
     clamped = max(_MIN, min(_MAX, current_minutes))
-    dur_var = tk.IntVar(value=clamped)
+    dur_var = tk.DoubleVar(value=float(clamped))
 
     val_label = ttk.Label(frame, text=f"{clamped} min", font=("", 26, "bold"))
     val_label.pack(pady=(4, 10))
@@ -81,7 +83,7 @@ def show_configure_window(current_minutes: int) -> int | None:
     ttk.Label(slider_row, text=str(_MAX), foreground="gray").pack(side=tk.LEFT)
 
     def _ok() -> None:
-        result[0] = int(dur_var.get())
+        result[0] = int(round(dur_var.get()))
         root.quit()
 
     def _cancel() -> None:
