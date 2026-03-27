@@ -11,36 +11,24 @@ import db
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _bring_to_front(root: tk.Tk) -> None:
-    """Reliably raise a tkinter window to the front from a macOS menu bar app.
+    """Raise and focus the window once it is rendered.
 
-    rumps runs as a background (LSUIElement) process.  Simply calling
-    NSApp.activateIgnoringOtherApps_ *before* the Tk event loop starts is
-    often too early — the window hasn't been mapped yet and the activation has
-    no visible effect.  The fix is a two-pass approach:
-
-      1. An immediate attempt (catches simple cases).
-      2. A delayed attempt scheduled via root.after(100) so it fires *inside*
-         the running event loop, after the window is actually on screen.
+    NSApp activation policy is handled by _open_window() in main.py before
+    any tkinter function is called.  This helper only needs to lift the window
+    and steal keyboard focus — done twice (immediately + after 100 ms) so it
+    works regardless of how long the initial widget build takes.
     """
-    def _activate() -> None:
-        try:
-            from AppKit import NSApp
-            NSApp.activateIgnoringOtherApps_(True)
-        except Exception:
-            pass
+    def _raise() -> None:
         try:
             root.lift()
             root.attributes("-topmost", True)
             root.focus_force()
-            # Drop the always-on-top flag after 1 s so normal window ordering resumes
-            root.after(1000, lambda: root.attributes("-topmost", False))
+            root.after(800, lambda: root.attributes("-topmost", False))
         except Exception:
             pass
 
-    # Pass 1 – immediate (window may not be mapped yet, but worth trying)
-    _activate()
-    # Pass 2 – delayed, fires inside the Tk event loop after the first frame
-    root.after(100, _activate)
+    _raise()
+    root.after(100, _raise)
 
 
 def _theme(root: tk.Tk) -> ttk.Style:

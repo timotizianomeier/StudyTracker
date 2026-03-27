@@ -16,6 +16,40 @@ from forms import (show_breathing_exercise, show_configure_window,
                    show_grounding_exercise, show_history_window, show_session_form)
 
 
+# ─── Activation helper ────────────────────────────────────────────────────────
+
+def _open_window(func, *args, **kwargs):
+    """
+    Call a tkinter window function while the process is in Regular activation mode.
+
+    rumps registers the Python process as NSApplicationActivationPolicyAccessory
+    (policy = 1).  In that mode macOS treats the process as a background-only
+    app and tkinter windows cannot come to the foreground — they are created but
+    remain hidden behind every other app.
+
+    The fix: temporarily switch to NSApplicationActivationPolicyRegular (0) so
+    the process is allowed to own the foreground, show the window, then restore
+    Accessory policy when the window closes.  A Dock icon appears briefly while
+    any window is open; it disappears once the policy is reset.
+    """
+    try:
+        from AppKit import NSApp
+        NSApp.setActivationPolicy_(0)           # Regular – foreground allowed
+        NSApp.activateIgnoringOtherApps_(True)
+    except Exception:
+        pass
+    try:
+        return func(*args, **kwargs)
+    finally:
+        try:
+            from AppKit import NSApp
+            NSApp.setActivationPolicy_(1)       # Accessory – menu-bar only
+        except Exception:
+            pass
+
+
+# ─── App ──────────────────────────────────────────────────────────────────────
+
 class PomodoroApp(rumps.App):
     """Menu-bar Pomodoro timer with session logging."""
 
@@ -112,7 +146,7 @@ class PomodoroApp(rumps.App):
             self.title = self._ICON_IDLE
             self._set_running(False)
             self._notify(duration)
-            result = show_session_form(duration)
+            result = _open_window(show_session_form, duration)
             if result:
                 db.save_session(
                     duration,
@@ -126,7 +160,6 @@ class PomodoroApp(rumps.App):
 
     def _notify(self, duration: int) -> None:
         """Fire a native macOS notification with sound."""
-        # Try rumps' built-in notification first; fall back to osascript.
         try:
             rumps.notification(
                 title="🍅 Pomodoro Tracker",
@@ -199,13 +232,12 @@ class PomodoroApp(rumps.App):
         self._clock_item.title = (
             "✓  Show countdown" if self.show_clock else "    Show countdown"
         )
-        # If we just hid the clock, snap the title back to just the icon immediately
         if not self.show_clock and self.is_running:
             self.title = self._ICON_PAUSED if self.is_paused else self._ICON_IDLE
 
     def _configure(self, _: rumps.MenuItem) -> None:
         try:
-            new_val = show_configure_window(self.session_minutes)
+            new_val = _open_window(show_configure_window, self.session_minutes)
             if new_val is not None:
                 self.session_minutes = new_val
         except Exception as exc:
@@ -220,19 +252,19 @@ class PomodoroApp(rumps.App):
             )
             return
         try:
-            show_history_window()
+            _open_window(show_history_window)
         except Exception as exc:
             rumps.alert(title="Error opening History", message=str(exc), ok="OK")
 
     def _breathing_exercise(self, _: rumps.MenuItem) -> None:
         try:
-            show_breathing_exercise()
+            _open_window(show_breathing_exercise)
         except Exception as exc:
             rumps.alert(title="Error opening Breathing Exercise", message=str(exc), ok="OK")
 
     def _grounding_exercise(self, _: rumps.MenuItem) -> None:
         try:
-            show_grounding_exercise()
+            _open_window(show_grounding_exercise)
         except Exception as exc:
             rumps.alert(title="Error opening Grounding Exercise", message=str(exc), ok="OK")
 
