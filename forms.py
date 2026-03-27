@@ -142,6 +142,13 @@ def show_session_form(duration_minutes: int) -> dict | None:
     frame.bind("<Configure>", _on_frame_configure)
     canvas.bind("<Configure>", _on_canvas_configure)
 
+    # Enable trackpad / mouse-wheel scrolling anywhere in the window.
+    # bind_all catches the event even when the pointer is over a child widget.
+    def _on_mousewheel(event: tk.Event) -> None:
+        canvas.yview_scroll(int(-1 * (event.delta / 30)), "units")
+
+    root.bind_all("<MouseWheel>", _on_mousewheel)
+
     # ── Header ────────────────────────────────────────────────────────────────
     ttk.Label(frame, text="🍅  Session Complete!", font=("", 17, "bold")).pack(pady=(0, 4))
     ttk.Label(
