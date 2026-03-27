@@ -158,6 +158,12 @@ class PomodoroApp(rumps.App):
     # ── Notification ──────────────────────────────────────────────────────────
 
     def _notify(self, duration: int) -> None:
+        # Play sound immediately via afplay — works regardless of notification
+        # permissions.  Glass.aiff is a standard macOS system sound.
+        try:
+            subprocess.Popen(["afplay", "/System/Library/Sounds/Glass.aiff"])
+        except Exception:
+            pass
         try:
             rumps.notification(
                 title="🍅 Pomodoro Tracker",
