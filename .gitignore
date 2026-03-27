@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+*.DS_Store
+
+# Database (local data, not for version control)
+*.db
+*.sqlite
+*.sqlite3
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.spec
+
+# PyInstaller / py2app output
+*.app/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
