@@ -204,9 +204,12 @@ class PomodoroApp(rumps.App):
             self.title = self._ICON_PAUSED if self.is_paused else self._ICON_IDLE
 
     def _configure(self, _: rumps.MenuItem) -> None:
-        new_val = show_configure_window(self.session_minutes)
-        if new_val is not None:
-            self.session_minutes = new_val
+        try:
+            new_val = show_configure_window(self.session_minutes)
+            if new_val is not None:
+                self.session_minutes = new_val
+        except Exception as exc:
+            rumps.alert(title="Error opening Configure", message=str(exc), ok="OK")
 
     def _view_history(self, _: rumps.MenuItem) -> None:
         if self.is_running:
@@ -216,13 +219,22 @@ class PomodoroApp(rumps.App):
                 ok="OK",
             )
             return
-        show_history_window()
+        try:
+            show_history_window()
+        except Exception as exc:
+            rumps.alert(title="Error opening History", message=str(exc), ok="OK")
 
     def _breathing_exercise(self, _: rumps.MenuItem) -> None:
-        show_breathing_exercise()
+        try:
+            show_breathing_exercise()
+        except Exception as exc:
+            rumps.alert(title="Error opening Breathing Exercise", message=str(exc), ok="OK")
 
     def _grounding_exercise(self, _: rumps.MenuItem) -> None:
-        show_grounding_exercise()
+        try:
+            show_grounding_exercise()
+        except Exception as exc:
+            rumps.alert(title="Error opening Grounding Exercise", message=str(exc), ok="OK")
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
