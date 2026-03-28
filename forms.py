@@ -492,17 +492,27 @@ def show_history_window() -> None:
                   font=("", 13), foreground="gray").pack(expand=True)
     else:
         # ── Organise data ────────────────────────────────────────────────
-        day_topic: dict[str, dict[str, int]] = {}
+        # day_topic[day][topic] = (total_min, avg_focus, sessions)
+        day_topic: dict[str, dict[str, tuple[int, float | None, int]]] = {}
         all_topics: set[str] = set()
         for _row in hist_data:
-            _d, _t, _m = _row["day"], _row["topic"], _row["total_min"]
+            _d, _t = _row["day"], _row["topic"]
             if _d not in day_topic:
                 day_topic[_d] = {}
-            day_topic[_d][_t] = _m
+            day_topic[_d][_t] = (_row["total_min"], _row["avg_focus"], _row["sessions"])
             all_topics.add(_t)
 
         hist_days   = sorted(day_topic.keys())
         hist_topics = sorted(all_topics)
+
+        def _day_avg_focus(day: str) -> float | None:
+            """Weighted average focus for the day (weighted by session count)."""
+            total_s, weighted = 0, 0.0
+            for _total_m, _af, _s in day_topic[day].values():
+                if _af is not None:
+                    weighted += _af * _s
+                    total_s  += _s
+            return round(weighted / total_s, 1) if total_s else None
 
         _PALETTE = [
             "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
@@ -511,13 +521,14 @@ def show_history_window() -> None:
         topic_color = {t: _PALETTE[i % len(_PALETTE)] for i, t in enumerate(hist_topics)}
 
         # ── Layout constants ─────────────────────────────────────────────
-        ML, MR, MT, MB = 55, 24, 36, 52   # margins: left, right, top, bottom
-        BW, BG = 46, 16                    # bar width, gap between bars
+        ML, MR, MT, MB = 58, 24, 48, 56   # margins: left, right, top, bottom
+        BW, BG = 52, 18                    # bar width, gap between bars
         CH     = 260                       # chart drawable height
+        SEG_LABEL_MIN_H = 22               # min pixel height to show a focus label inside segment
 
-        _max_min = max(sum(day_topic[d].values()) for d in hist_days)
+        _max_min = max(sum(v[0] for v in day_topic[d].values()) for d in hist_days)
         _max_h   = _max_min / 60.0
-        _y_max   = max(0.5, math.ceil(_max_h * 2) / 2)   # round up to 0.5 h
+        _y_max   = max(0.5, math.ceil(_max_h * 2) / 2)   # round up to nearest 0.5 h
 
         _canvas_w = ML + MR + len(hist_days) * (BW + BG)
         _canvas_h = MT + CH + MB
@@ -529,11 +540,11 @@ def show_history_window() -> None:
         leg_frame = ttk.Frame(hist_tab)
         leg_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=ML + 8, pady=(0, 6))
         for _t in hist_topics:
-            _swatch = tk.Canvas(leg_frame, width=12, height=12,
+            _swatch = tk.Canvas(leg_frame, width=14, height=14,
                                 highlightthickness=0, bg=topic_color[_t])
-            _swatch.pack(side=tk.LEFT, padx=(0, 3))
-            ttk.Label(leg_frame, text=_t, font=("", 9)).pack(
-                side=tk.LEFT, padx=(0, 14))
+            _swatch.pack(side=tk.LEFT, padx=(0, 4))
+            ttk.Label(leg_frame, text=_t, font=("", 11)).pack(
+                side=tk.LEFT, padx=(0, 16))
 
         # ── Scrollable canvas ────────────────────────────────────────────
         _scroll_frame = ttk.Frame(hist_tab)
@@ -563,17 +574,17 @@ def show_history_window() -> None:
             cv.create_line(ML, _gy, _canvas_w - MR, _gy,
                            fill="#e4e4e4", dash=(3, 4))
             _lbl = f"{int(_vh)}h" if _vh == int(_vh) else f"{_vh:.1f}h"
-            cv.create_text(ML - 5, _gy, text=_lbl, anchor="e",
-                           font=("", 9), fill="#555")
+            cv.create_text(ML - 6, _gy, text=_lbl, anchor="e",
+                           font=("", 11), fill="#555")
 
         # ── Axes ─────────────────────────────────────────────────────────
         cv.create_line(ML, MT, ML, MT + CH, fill="#bbb")
         cv.create_line(ML, MT + CH, _canvas_w - MR, MT + CH, fill="#bbb")
 
         # ── Title ────────────────────────────────────────────────────────
-        cv.create_text(ML + (_canvas_w - ML - MR) / 2, 10,
+        cv.create_text(ML + (_canvas_w - ML - MR) / 2, 8,
                        text="Daily Study Time by Module",
-                       anchor="n", font=("", 11, "bold"), fill="#333")
+                       anchor="n", font=("", 13, "bold"), fill="#333")
 
         # ── Bars ─────────────────────────────────────────────────────────
         for _di, _day in enumerate(hist_days):
@@ -581,30 +592,43 @@ def show_history_window() -> None:
             _x1 = _x0 + BW
             _cx = (_x0 + _x1) / 2
             _day_data = day_topic[_day]
-            _total_m  = sum(_day_data.values())
+            _total_m  = sum(v[0] for v in _day_data.values())
             _yc       = MT + CH   # y-cursor, stacks from bottom up
 
             for _tp in hist_topics:
                 if _tp not in _day_data:
                     continue
-                _seg_m = _day_data[_tp]
-                _bh    = max(1, int(CH * _seg_m / (_y_max * 60)))
-                _yt    = _yc - _bh
+                _seg_m, _seg_af, _ = _day_data[_tp]
+                _bh  = max(1, int(CH * _seg_m / (_y_max * 60)))
+                _yt  = _yc - _bh
                 cv.create_rectangle(_x0, _yt, _x1, _yc,
                                     fill=topic_color[_tp], outline="white", width=1)
+                # Focus label inside segment (only if segment is tall enough)
+                if _seg_af is not None and _bh >= SEG_LABEL_MIN_H:
+                    _mid_y = (_yt + _yc) / 2
+                    cv.create_text(_cx, _mid_y, text=f"{_seg_af:.1f}",
+                                   font=("", 10, "bold"), fill="white",
+                                   anchor="center")
                 _yc = _yt
 
-            # Total-hours label above the bar
+            # Day average-focus label (top line above bar)
+            _daf = _day_avg_focus(_day)
+            if _daf is not None:
+                cv.create_text(_cx, _yc - 4, text=f"★ {_daf:.1f}",
+                               anchor="s", font=("", 10), fill="#555")
+                _yc -= 16   # shift so hours label doesn't overlap
+
+            # Total-hours label (second line above bar)
             _th = _total_m / 60
             _total_lbl = f"{_th:.1f}h" if _th >= 0.1 else f"{_total_m}m"
-            cv.create_text(_cx, _yc - 4, text=_total_lbl, anchor="s",
-                           font=("", 8, "bold"), fill="#222")
+            cv.create_text(_cx, _yc - 2, text=_total_lbl, anchor="s",
+                           font=("", 11, "bold"), fill="#222")
 
             # Date label below x-axis (rotated 45°)
             _short = _day[5:]   # "MM-DD"
             cv.create_text(_x0 + BW // 2, MT + CH + 5,
                            text=_short, anchor="nw",
-                           font=("", 8), fill="#555", angle=45)
+                           font=("", 10), fill="#555", angle=45)
 
     root.mainloop()
     # No root.destroy() – destroy is called by Close button or window close

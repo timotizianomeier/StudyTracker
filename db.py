@@ -102,13 +102,15 @@ def get_stats_by_time_of_day() -> list[sqlite3.Row]:
 
 
 def get_daily_by_topic() -> list[sqlite3.Row]:
-    """Returns (day, topic, total_min) rows sorted by day ascending."""
+    """Returns (day, topic, total_min, avg_focus, sessions) rows sorted by day ascending."""
     with _connect() as conn:
         return conn.execute("""
             SELECT
                 DATE(timestamp) AS day,
                 COALESCE(NULLIF(topic, ''), '(no topic)') AS topic,
-                SUM(duration) AS total_min
+                SUM(duration)        AS total_min,
+                ROUND(AVG(focus), 1) AS avg_focus,
+                COUNT(*)             AS sessions
             FROM sessions
             GROUP BY day, topic
             ORDER BY day ASC
