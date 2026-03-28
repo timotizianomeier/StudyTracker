@@ -38,7 +38,14 @@ def main() -> None:
     _activate()
     window = sys.argv[1]
 
-    if window == "configure":
+    if window == "start_session":
+        current = int(sys.argv[2]) if len(sys.argv) > 2 else 25
+        from forms import show_start_window
+        result = show_start_window(current)
+        if result is not None:
+            print(json.dumps(result), flush=True)
+
+    elif window == "configure":
         current = int(sys.argv[2]) if len(sys.argv) > 2 else 25
         from forms import show_configure_window
         result = show_configure_window(current)

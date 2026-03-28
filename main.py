@@ -68,7 +68,8 @@ class PomodoroApp(rumps.App):
         self.is_paused:       bool = False
         self.show_clock:      bool = True
         self._timer_thread: threading.Thread | None = None
-        self._done_queue: queue.Queue[int] = queue.Queue()
+        self._done_queue:  queue.Queue[int] = queue.Queue()
+        self._start_queue: queue.Queue[int] = queue.Queue()
 
         # Menu items
         self._status_item = rumps.MenuItem("No session running")
@@ -124,7 +125,18 @@ class PomodoroApp(rumps.App):
             self._done_queue.put(minutes)
 
     def _on_tick(self, _: rumps.Timer) -> None:
-        """Main-thread poll: refresh title and handle session completion."""
+        """Main-thread poll: refresh title and handle session start/completion."""
+        # Handle a pending start request (duration chosen in the picker window)
+        if not self.is_running and not self._start_queue.empty():
+            duration = self._start_queue.get_nowait()
+            self.session_minutes = duration
+            self.is_paused = False
+            self._set_running(True)
+            self._timer_thread = threading.Thread(
+                target=self._countdown, args=(self.session_minutes,), daemon=True
+            )
+            self._timer_thread.start()
+
         if self.is_running:
             m, s = divmod(self.time_remaining, 60)
             time_str = f"{m:02d}:{s:02d}"
@@ -203,12 +215,13 @@ class PomodoroApp(rumps.App):
     def _start_session(self, _: rumps.MenuItem) -> None:
         if self.is_running:
             return
-        self.is_paused = False
-        self._set_running(True)
-        self._timer_thread = threading.Thread(
-            target=self._countdown, args=(self.session_minutes,), daemon=True
-        )
-        self._timer_thread.start()
+        # Open the duration-picker window in a background thread; the result
+        # is picked up by _on_tick on the main thread to safely start the session.
+        def _run() -> None:
+            result = _run_window("start_session", self.session_minutes)
+            if result is not None:
+                self._start_queue.put(result)
+        threading.Thread(target=_run, daemon=True).start()
 
     def _pause_session(self, _: rumps.MenuItem) -> None:
         if not self.is_running:

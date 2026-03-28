@@ -40,19 +40,51 @@ def _theme(root: tk.Tk) -> ttk.Style:
     return style
 
 
-# ─── Configure window ────────────────────────────────────────────────────────
+# ─── Shared: duration-picker widget builder ───────────────────────────────────
 
-def show_configure_window(current_minutes: int) -> int | None:
+def _build_duration_picker(
+    frame: ttk.Frame,
+    current_minutes: int,
+    _min: int = 5,
+    _max: int = 55,
+) -> tk.DoubleVar:
     """
-    Slider dialog to change session duration (5–55 min).
-    Returns the new duration (int) or None if cancelled.
+    Add a session-length label, value display, and slider to *frame*.
+    Returns the DoubleVar that holds the chosen value.
     """
-    _MIN, _MAX = 5, 55
+    ttk.Label(frame, text="Session length", font=("", 13)).pack()
+
+    clamped  = max(_min, min(_max, current_minutes))
+    dur_var  = tk.DoubleVar(value=float(clamped))
+    val_label = ttk.Label(frame, text=f"{clamped} min", font=("", 26, "bold"))
+    val_label.pack(pady=(4, 10))
+
+    def _on_slider(val: str) -> None:
+        val_label.config(text=f"{int(float(val))} min")
+
+    slider_row = ttk.Frame(frame)
+    slider_row.pack(fill=tk.X, pady=(0, 6))
+    ttk.Label(slider_row, text=str(_min), foreground="gray").pack(side=tk.LEFT)
+    ttk.Scale(
+        slider_row, from_=_min, to=_max, orient=tk.HORIZONTAL,
+        variable=dur_var, command=_on_slider, length=240,
+    ).pack(side=tk.LEFT, padx=8, expand=True, fill=tk.X)
+    ttk.Label(slider_row, text=str(_max), foreground="gray").pack(side=tk.LEFT)
+    return dur_var
+
+
+# ─── Start-session window (slider + Play button) ──────────────────────────────
+
+def show_start_window(current_minutes: int) -> int | None:
+    """
+    Duration picker shown when the user clicks Start Session.
+    Returns the chosen duration (int) or None if cancelled.
+    """
     result: list[int | None] = [None]
 
     root = tk.Tk()
-    root.title("Configure Session")
-    root.geometry("360x210")
+    root.title("Start Session")
+    root.geometry("360x230")
     root.resizable(False, False)
     _theme(root)
     _bring_to_front(root)
@@ -60,28 +92,49 @@ def show_configure_window(current_minutes: int) -> int | None:
     frame = ttk.Frame(root, padding=24)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    ttk.Label(frame, text="Session length", font=("", 13)).pack()
+    dur_var = _build_duration_picker(frame, current_minutes)
 
-    # Clamp to the valid range in case a legacy value is outside it.
-    # Use DoubleVar – ttk.Scale updates it as a float internally.
-    clamped = max(_MIN, min(_MAX, current_minutes))
-    dur_var = tk.DoubleVar(value=float(clamped))
+    def _start() -> None:
+        result[0] = int(round(dur_var.get()))
+        root.quit()
 
-    val_label = ttk.Label(frame, text=f"{clamped} min", font=("", 26, "bold"))
-    val_label.pack(pady=(4, 10))
+    def _cancel() -> None:
+        root.quit()
 
-    def _on_slider(val: str) -> None:
-        v = int(float(val))
-        val_label.config(text=f"{v} min")
+    btn_frame = ttk.Frame(frame)
+    btn_frame.pack(pady=(10, 0))
+    ttk.Button(btn_frame, text="Cancel", command=_cancel).pack(side=tk.LEFT, padx=6)
+    ttk.Button(btn_frame, text="▶  Start", command=_start).pack(side=tk.LEFT, padx=6)
 
-    slider_row = ttk.Frame(frame)
-    slider_row.pack(fill=tk.X, pady=(0, 6))
-    ttk.Label(slider_row, text=str(_MIN), foreground="gray").pack(side=tk.LEFT)
-    ttk.Scale(
-        slider_row, from_=_MIN, to=_MAX, orient=tk.HORIZONTAL,
-        variable=dur_var, command=_on_slider, length=240,
-    ).pack(side=tk.LEFT, padx=8, expand=True, fill=tk.X)
-    ttk.Label(slider_row, text=str(_MAX), foreground="gray").pack(side=tk.LEFT)
+    root.protocol("WM_DELETE_WINDOW", _cancel)
+    root.bind("<Return>", lambda _: _start())
+    root.bind("<Escape>", lambda _: _cancel())
+
+    root.mainloop()
+    root.destroy()
+    return result[0]
+
+
+# ─── Configure window ────────────────────────────────────────────────────────
+
+def show_configure_window(current_minutes: int) -> int | None:
+    """
+    Slider dialog to change the default session duration without starting.
+    Returns the new duration (int) or None if cancelled.
+    """
+    result: list[int | None] = [None]
+
+    root = tk.Tk()
+    root.title("Configure Session")
+    root.geometry("360x230")
+    root.resizable(False, False)
+    _theme(root)
+    _bring_to_front(root)
+
+    frame = ttk.Frame(root, padding=24)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    dur_var = _build_duration_picker(frame, current_minutes)
 
     def _ok() -> None:
         result[0] = int(round(dur_var.get()))
@@ -302,6 +355,10 @@ def show_history_window() -> None:
     hsb.pack(side=tk.BOTTOM, fill=tk.X)
     tree.pack(fill=tk.BOTH, expand=True)
 
+    # Enable trackpad/mousewheel scrolling on the session log treeview
+    tree.bind("<MouseWheel>",
+              lambda e: tree.yview_scroll(int(-1 * (e.delta / 30)), "units"))
+
     sessions = db.get_all_sessions()
     for i, row in enumerate(sessions):
         ts = row["timestamp"]
@@ -425,6 +482,130 @@ def show_history_window() -> None:
     ttk.Button(btn_bar, text="↺  Refresh", command=_refresh).pack(side=tk.LEFT)
     ttk.Button(btn_bar, text="Close", command=root.destroy).pack(side=tk.RIGHT)
 
+    # ── Tab 3: Daily Histogram ────────────────────────────────────────────────
+    hist_tab = ttk.Frame(nb)
+    nb.add(hist_tab, text="  Daily Chart  ")
+
+    hist_data = db.get_daily_by_topic()
+    if not hist_data:
+        ttk.Label(hist_tab, text="No sessions recorded yet.",
+                  font=("", 13), foreground="gray").pack(expand=True)
+    else:
+        # ── Organise data ────────────────────────────────────────────────
+        day_topic: dict[str, dict[str, int]] = {}
+        all_topics: set[str] = set()
+        for _row in hist_data:
+            _d, _t, _m = _row["day"], _row["topic"], _row["total_min"]
+            if _d not in day_topic:
+                day_topic[_d] = {}
+            day_topic[_d][_t] = _m
+            all_topics.add(_t)
+
+        hist_days   = sorted(day_topic.keys())
+        hist_topics = sorted(all_topics)
+
+        _PALETTE = [
+            "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+            "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
+        ]
+        topic_color = {t: _PALETTE[i % len(_PALETTE)] for i, t in enumerate(hist_topics)}
+
+        # ── Layout constants ─────────────────────────────────────────────
+        ML, MR, MT, MB = 55, 24, 36, 52   # margins: left, right, top, bottom
+        BW, BG = 46, 16                    # bar width, gap between bars
+        CH     = 260                       # chart drawable height
+
+        _max_min = max(sum(day_topic[d].values()) for d in hist_days)
+        _max_h   = _max_min / 60.0
+        _y_max   = max(0.5, math.ceil(_max_h * 2) / 2)   # round up to 0.5 h
+
+        _canvas_w = ML + MR + len(hist_days) * (BW + BG)
+        _canvas_h = MT + CH + MB
+
+        def _min_to_y(minutes: float) -> int:
+            return MT + CH - int(CH * minutes / (_y_max * 60))
+
+        # ── Legend (fixed, below chart) ──────────────────────────────────
+        leg_frame = ttk.Frame(hist_tab)
+        leg_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=ML + 8, pady=(0, 6))
+        for _t in hist_topics:
+            _swatch = tk.Canvas(leg_frame, width=12, height=12,
+                                highlightthickness=0, bg=topic_color[_t])
+            _swatch.pack(side=tk.LEFT, padx=(0, 3))
+            ttk.Label(leg_frame, text=_t, font=("", 9)).pack(
+                side=tk.LEFT, padx=(0, 14))
+
+        # ── Scrollable canvas ────────────────────────────────────────────
+        _scroll_frame = ttk.Frame(hist_tab)
+        _scroll_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 4))
+
+        _hsb = ttk.Scrollbar(_scroll_frame, orient="horizontal")
+        _hsb.pack(side=tk.BOTTOM, fill=tk.X)
+
+        cv = tk.Canvas(_scroll_frame, bg="white", highlightthickness=0,
+                       xscrollcommand=_hsb.set)
+        cv.pack(fill=tk.BOTH, expand=True)
+        _hsb.config(command=cv.xview)
+        cv.configure(scrollregion=(0, 0, _canvas_w, _canvas_h))
+
+        # Scroll to most-recent (right end) on open
+        cv.after(150, lambda: cv.xview_moveto(1.0))
+
+        # Mousewheel scrolls the chart horizontally
+        cv.bind("<MouseWheel>",
+                lambda e: cv.xview_scroll(int(-1 * (e.delta / 30)), "units"))
+
+        # ── Grid lines + Y-axis labels ───────────────────────────────────
+        _n_ticks = int(_y_max / 0.5) + 1
+        for _i in range(_n_ticks):
+            _vh = _i * 0.5
+            _gy = _min_to_y(_vh * 60)
+            cv.create_line(ML, _gy, _canvas_w - MR, _gy,
+                           fill="#e4e4e4", dash=(3, 4))
+            _lbl = f"{int(_vh)}h" if _vh == int(_vh) else f"{_vh:.1f}h"
+            cv.create_text(ML - 5, _gy, text=_lbl, anchor="e",
+                           font=("", 9), fill="#555")
+
+        # ── Axes ─────────────────────────────────────────────────────────
+        cv.create_line(ML, MT, ML, MT + CH, fill="#bbb")
+        cv.create_line(ML, MT + CH, _canvas_w - MR, MT + CH, fill="#bbb")
+
+        # ── Title ────────────────────────────────────────────────────────
+        cv.create_text(ML + (_canvas_w - ML - MR) / 2, 10,
+                       text="Daily Study Time by Module",
+                       anchor="n", font=("", 11, "bold"), fill="#333")
+
+        # ── Bars ─────────────────────────────────────────────────────────
+        for _di, _day in enumerate(hist_days):
+            _x0 = ML + _di * (BW + BG)
+            _x1 = _x0 + BW
+            _cx = (_x0 + _x1) / 2
+            _day_data = day_topic[_day]
+            _total_m  = sum(_day_data.values())
+            _yc       = MT + CH   # y-cursor, stacks from bottom up
+
+            for _tp in hist_topics:
+                if _tp not in _day_data:
+                    continue
+                _seg_m = _day_data[_tp]
+                _bh    = max(1, int(CH * _seg_m / (_y_max * 60)))
+                _yt    = _yc - _bh
+                cv.create_rectangle(_x0, _yt, _x1, _yc,
+                                    fill=topic_color[_tp], outline="white", width=1)
+                _yc = _yt
+
+            # Total-hours label above the bar
+            _th = _total_m / 60
+            _total_lbl = f"{_th:.1f}h" if _th >= 0.1 else f"{_total_m}m"
+            cv.create_text(_cx, _yc - 4, text=_total_lbl, anchor="s",
+                           font=("", 8, "bold"), fill="#222")
+
+            # Date label below x-axis (rotated 45°)
+            _short = _day[5:]   # "MM-DD"
+            cv.create_text(_x0 + BW // 2, MT + CH + 5,
+                           text=_short, anchor="nw",
+                           font=("", 8), fill="#555", angle=45)
+
     root.mainloop()
     # No root.destroy() – destroy is called by Close button or window close
 
@@ -524,10 +705,7 @@ def show_breathing_exercise() -> None:
                      bg=BG, fg="white").pack()
             tk.Label(done, text="One minute of box breathing complete.",
                      font=("", 11), bg=BG, fg="#6a9ec0").pack(pady=(4, 20))
-            tk.Button(done, text="Close", command=root.quit,
-                       bg="#1d3a52", fg="white", relief="flat",
-                       activebackground="#2a5272", activeforeground="white",
-                       font=("", 12), padx=18, pady=6, cursor="hand2", bd=0).pack()
+            ttk.Button(done, text="Close", command=root.quit).pack()
             return
 
         # ── Current phase ─────────────────────────────────────────────────

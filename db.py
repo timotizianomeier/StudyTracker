@@ -78,13 +78,13 @@ def get_stats_by_time_of_day() -> list[sqlite3.Row]:
         return conn.execute("""
             SELECT
                 CASE
-                    WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 5  AND 11
-                        THEN '🌅 Morning (5–11)'
-                    WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 12 AND 16
-                        THEN '☀️ Afternoon (12–16)'
-                    WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 17 AND 20
-                        THEN '🌆 Evening (17–20)'
-                    ELSE '🌙 Night (21–4)'
+                    WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 7  AND 12
+                        THEN '🌅 Morning (7–13)'
+                    WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 13 AND 16
+                        THEN '☀️ Afternoon (13–17)'
+                    WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 17 AND 22
+                        THEN '🌆 Evening (17–23)'
+                    ELSE '🌙 Night (23–7)'
                 END AS period,
                 ROUND(AVG(focus), 1) AS avg_focus,
                 COUNT(*)             AS sessions
@@ -93,11 +93,25 @@ def get_stats_by_time_of_day() -> list[sqlite3.Row]:
             GROUP BY period
             ORDER BY
                 CASE period
-                    WHEN '🌅 Morning (5–11)'    THEN 1
-                    WHEN '☀️ Afternoon (12–16)' THEN 2
-                    WHEN '🌆 Evening (17–20)'   THEN 3
+                    WHEN '🌅 Morning (7–13)'    THEN 1
+                    WHEN '☀️ Afternoon (13–17)' THEN 2
+                    WHEN '🌆 Evening (17–23)'   THEN 3
                     ELSE 4
                 END
+        """).fetchall()
+
+
+def get_daily_by_topic() -> list[sqlite3.Row]:
+    """Returns (day, topic, total_min) rows sorted by day ascending."""
+    with _connect() as conn:
+        return conn.execute("""
+            SELECT
+                DATE(timestamp) AS day,
+                COALESCE(NULLIF(topic, ''), '(no topic)') AS topic,
+                SUM(duration) AS total_min
+            FROM sessions
+            GROUP BY day, topic
+            ORDER BY day ASC
         """).fetchall()
 
 
