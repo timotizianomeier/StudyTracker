@@ -78,7 +78,8 @@ class PomodoroApp(rumps.App):
         self._stop_item   = rumps.MenuItem("⏹  Stop Session")
         self._clock_item  = rumps.MenuItem("✓  Show countdown", callback=self._toggle_clock)
         self._config_item = rumps.MenuItem("⚙  Configure…",     callback=self._configure)
-        self._hist_item   = rumps.MenuItem("📋  View History",   callback=self._view_history)
+        self._hist_item     = rumps.MenuItem("📋  View History",      callback=self._view_history)
+        self._insights_item = rumps.MenuItem("🔍  Insights (Beta)",  callback=self._view_insights)
         self._quit_item   = rumps.MenuItem("Quit",              callback=rumps.quit_application)
 
         self._meditate_item = rumps.MenuItem("🧘  Meditate")
@@ -99,6 +100,7 @@ class PomodoroApp(rumps.App):
             self._clock_item,
             self._config_item,
             self._hist_item,
+            self._insights_item,
             self._meditate_item,
             None,
             self._quit_item,
@@ -267,6 +269,9 @@ class PomodoroApp(rumps.App):
             if result is not None:
                 self.session_minutes = result
         threading.Thread(target=_run, daemon=True).start()
+
+    def _view_insights(self, _: rumps.MenuItem) -> None:
+        _launch_window("insights")
 
     def _view_history(self, _: rumps.MenuItem) -> None:
         if self.is_running:

@@ -71,6 +71,10 @@ def main() -> None:
         from forms import show_grounding_exercise
         show_grounding_exercise()
 
+    elif window == "insights":
+        from forms import show_insights_window
+        show_insights_window()
+
 
 if __name__ == "__main__":
     main()

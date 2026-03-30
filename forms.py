@@ -642,6 +642,322 @@ def show_history_window() -> None:
     # No root.destroy() – destroy is called by Close button or window close
 
 
+# ─── Insights (Beta) window ──────────────────────────────────────────────────
+
+def show_insights_window() -> None:
+    """Distraction Insights window with three analytical views."""
+    root = tk.Tk()
+    root.title("🔍 Insights (Beta)")
+    root.geometry("960x680")
+    root.minsize(780, 520)
+    _theme(root)
+    _bring_to_front(root)
+
+    nb = ttk.Notebook(root)
+    nb.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+    # ── Tab 1: Top Distraction Words ──────────────────────────────────────────
+    words_tab = ttk.Frame(nb, padding=12)
+    nb.add(words_tab, text="  Top Words  ")
+
+    dist_sum  = db.get_distraction_summary()
+    total_s   = dist_sum["total_sessions"]
+    dist_s    = dist_sum["distracted_sessions"]
+    dist_pct  = dist_sum["distraction_rate"]
+
+    banner = ttk.LabelFrame(words_tab, text="  Overview  ", padding=10)
+    banner.pack(fill=tk.X, pady=(0, 12))
+    ttk.Label(
+        banner,
+        text=f"Sessions with distractions:  {dist_s} of {total_s}  ({dist_pct}%)",
+        font=("", 13),
+    ).pack(anchor=tk.W)
+
+    word_data = db.get_distraction_word_freq(top_n=25)
+
+    if not word_data:
+        ttk.Label(words_tab, text="No distraction notes recorded yet.",
+                  font=("", 13), foreground="gray").pack(expand=True)
+    else:
+        max_count = word_data[0][1]
+        BAR_LEN   = 28
+
+        cols = ("rank", "word", "count", "bar")
+        wf = ttk.Frame(words_tab)
+        wf.pack(fill=tk.BOTH, expand=True)
+        tree = ttk.Treeview(wf, columns=cols, show="headings", selectmode="browse")
+        tree.heading("rank",  text="#")
+        tree.heading("word",  text="Word")
+        tree.heading("count", text="Count")
+        tree.heading("bar",   text="Frequency")
+        tree.column("rank",  width=44,  anchor="center")
+        tree.column("word",  width=160, anchor="w")
+        tree.column("count", width=70,  anchor="center")
+        tree.column("bar",   width=380, anchor="w")
+
+        vsb = ttk.Scrollbar(wf, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        tree.pack(fill=tk.BOTH, expand=True)
+        tree.bind("<MouseWheel>",
+                  lambda e: tree.yview_scroll(int(-1 * (e.delta / 30)), "units"))
+
+        style = ttk.Style(root)
+        style.configure("Treeview", foreground="#000000", background="#ffffff",
+                        fieldbackground="#ffffff", rowheight=22)
+        style.configure("Treeview.Heading", foreground="#000000")
+        style.map("Treeview", foreground=[("selected", "#ffffff")])
+
+        for i, (word, count) in enumerate(word_data):
+            filled = round(count / max_count * BAR_LEN)
+            bar    = "█" * filled + "░" * (BAR_LEN - filled)
+            tag    = "even" if i % 2 == 0 else "odd"
+            tree.insert("", tk.END, tags=(tag,), values=(i + 1, word, count, bar))
+
+        tree.tag_configure("even", background="#f0f0f0", foreground="#000000")
+        tree.tag_configure("odd",  background="#ffffff", foreground="#000000")
+
+    w_btn = ttk.Frame(words_tab)
+    w_btn.pack(fill=tk.X, pady=(8, 0))
+    ttk.Button(w_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
+
+    # ── Tab 2: When Distracted ────────────────────────────────────────────────
+    when_tab = ttk.Frame(nb, padding=8)
+    nb.add(when_tab, text="  When Distracted  ")
+
+    # ── Hour-of-day data ──────────────────────────────────────────────────────
+    hour_rows = db.get_distraction_by_hour()
+    hour_dict: dict[int, tuple[int, int]] = {
+        row["hour"]: (row["total_sessions"], row["distracted_sessions"] or 0)
+        for row in hour_rows
+    }
+    hour_rates: list[tuple[int, float, int, int]] = []
+    for h in range(24):
+        total, dist = hour_dict.get(h, (0, 0))
+        rate = round(dist / total * 100, 1) if total else 0.0
+        hour_rates.append((h, rate, total, dist))
+
+    # ── Weekday data ──────────────────────────────────────────────────────────
+    WD_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    wd_rows = db.get_distraction_by_weekday()
+    wd_dict: dict[int, tuple[int, int]] = {
+        row["weekday"]: (row["total_sessions"], row["distracted_sessions"] or 0)
+        for row in wd_rows
+    }
+    wd_rates: list[tuple[str, float, int, int]] = []
+    for i in range(7):
+        total, dist = wd_dict.get(i, (0, 0))
+        rate = round(dist / total * 100, 1) if total else 0.0
+        wd_rates.append((WD_LABELS[i], rate, total, dist))
+
+    no_when_data = (
+        not any(x[2] > 0 for x in hour_rates)
+        and not any(x[2] > 0 for x in wd_rates)
+    )
+    if no_when_data:
+        ttk.Label(when_tab, text="No session data yet.",
+                  font=("", 13), foreground="gray").pack(expand=True)
+    else:
+        charts_frame = ttk.Frame(when_tab)
+        charts_frame.pack(fill=tk.BOTH, expand=True)
+        charts_frame.columnconfigure(0, weight=3)
+        charts_frame.columnconfigure(1, weight=2)
+
+        DIST_CLR  = "#e15759"
+        EMPTY_CLR = "#e8e8e8"
+
+        # ── Hour chart (scrollable) ───────────────────────────────────────────
+        hour_lf = ttk.LabelFrame(
+            charts_frame, text="  Distraction Rate by Hour of Day  ", padding=8
+        )
+        hour_lf.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+
+        BW, BG_H   = 18, 4
+        H_ML, H_MR = 48, 12
+        H_MT, H_MB = 36, 44
+        H_CH       = 200
+
+        active_hours = [x for x in hour_rates if x[2] > 0]
+        h_max_rate   = max((x[1] for x in active_hours), default=0)
+        h_y_max      = max(10.0, math.ceil(h_max_rate / 10) * 10)
+        h_canvas_w   = H_ML + H_MR + 24 * (BW + BG_H)
+        h_canvas_h   = H_MT + H_CH + H_MB
+
+        h_rate_to_y = lambda r: H_MT + H_CH - int(H_CH * r / h_y_max)  # noqa: E731
+
+        cv_h_frame = ttk.Frame(hour_lf)
+        cv_h_frame.pack(fill=tk.BOTH, expand=True)
+        h_hsb = ttk.Scrollbar(cv_h_frame, orient="horizontal")
+        h_hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        cv_hour = tk.Canvas(cv_h_frame, bg="white", highlightthickness=0,
+                            xscrollcommand=h_hsb.set)
+        cv_hour.pack(fill=tk.BOTH, expand=True)
+        h_hsb.config(command=cv_hour.xview)
+        cv_hour.configure(scrollregion=(0, 0, h_canvas_w, h_canvas_h))
+        cv_hour.bind("<MouseWheel>",
+                     lambda e: cv_hour.xview_scroll(int(-1 * (e.delta / 30)), "units"))
+
+        for i in range(int(h_y_max / 10) + 1):
+            pct = i * 10
+            gy  = h_rate_to_y(pct)
+            cv_hour.create_line(H_ML, gy, h_canvas_w - H_MR, gy,
+                                fill="#e8e8e8", dash=(3, 4))
+            cv_hour.create_text(H_ML - 4, gy, text=f"{pct}%",
+                                anchor="e", font=("", 9), fill="#888")
+        cv_hour.create_line(H_ML, H_MT, H_ML, H_MT + H_CH, fill="#ccc")
+        cv_hour.create_line(H_ML, H_MT + H_CH, h_canvas_w - H_MR, H_MT + H_CH, fill="#ccc")
+
+        for h, rate, total, dist in hour_rates:
+            x0 = H_ML + h * (BW + BG_H)
+            x1 = x0 + BW
+            cx = (x0 + x1) / 2
+            bar_top = h_rate_to_y(rate) if rate > 0 else H_MT + H_CH
+            color   = DIST_CLR if (total > 0 and rate > 0) else (EMPTY_CLR if total > 0 else "#f4f4f4")
+            cv_hour.create_rectangle(x0, bar_top, x1, H_MT + H_CH, fill=color, outline="")
+            if rate > 0:
+                cv_hour.create_text(cx, bar_top - 3, text=f"{rate:.0f}%",
+                                    anchor="s", font=("", 8), fill="#555")
+            cv_hour.create_text(cx, H_MT + H_CH + 4,
+                                text=f"{h:02d}", anchor="n", font=("", 9), fill="#555")
+
+        if active_hours:
+            first_h = active_hours[0][0]
+            scroll_x = max(0.0, (first_h * (BW + BG_H) - 20) / h_canvas_w)
+            cv_hour.after(150, lambda: cv_hour.xview_moveto(scroll_x))
+
+        # ── Weekday chart ─────────────────────────────────────────────────────
+        wd_lf = ttk.LabelFrame(
+            charts_frame, text="  Distraction Rate by Day of Week  ", padding=8
+        )
+        wd_lf.grid(row=0, column=1, sticky="nsew")
+
+        WD_BW, WD_BG   = 38, 10
+        WD_ML, WD_MR   = 48, 12
+        WD_MT, WD_MB   = 36, 36
+        WD_CH          = 200
+        wd_max_rate     = max((x[1] for x in wd_rates if x[2] > 0), default=0)
+        wd_y_max        = max(10.0, math.ceil(wd_max_rate / 10) * 10)
+        wd_canvas_w     = WD_ML + WD_MR + 7 * (WD_BW + WD_BG)
+        wd_canvas_h     = WD_MT + WD_CH + WD_MB
+
+        wd_rate_to_y = lambda r: WD_MT + WD_CH - int(WD_CH * r / wd_y_max)  # noqa: E731
+
+        cv_wd = tk.Canvas(wd_lf, bg="white", highlightthickness=0,
+                          width=wd_canvas_w, height=wd_canvas_h)
+        cv_wd.pack(fill=tk.BOTH, expand=True)
+
+        for i in range(int(wd_y_max / 10) + 1):
+            pct = i * 10
+            gy  = wd_rate_to_y(pct)
+            cv_wd.create_line(WD_ML, gy, wd_canvas_w - WD_MR, gy,
+                              fill="#e8e8e8", dash=(3, 4))
+            cv_wd.create_text(WD_ML - 4, gy, text=f"{pct}%",
+                              anchor="e", font=("", 9), fill="#888")
+        cv_wd.create_line(WD_ML, WD_MT, WD_ML, WD_MT + WD_CH, fill="#ccc")
+        cv_wd.create_line(WD_ML, WD_MT + WD_CH, wd_canvas_w - WD_MR, WD_MT + WD_CH, fill="#ccc")
+
+        for i, (label, rate, total, dist) in enumerate(wd_rates):
+            x0 = WD_ML + i * (WD_BW + WD_BG)
+            x1 = x0 + WD_BW
+            cx = (x0 + x1) / 2
+            bar_top = wd_rate_to_y(rate) if rate > 0 else WD_MT + WD_CH
+            color   = DIST_CLR if (total > 0 and rate > 0) else (EMPTY_CLR if total > 0 else "#f4f4f4")
+            cv_wd.create_rectangle(x0, bar_top, x1, WD_MT + WD_CH, fill=color, outline="")
+            if rate > 0:
+                cv_wd.create_text(cx, bar_top - 3, text=f"{rate:.0f}%",
+                                  anchor="s", font=("", 9), fill="#555")
+            cv_wd.create_text(cx, WD_MT + WD_CH + 4,
+                              text=label, anchor="n", font=("", 10), fill="#555")
+
+    wh_btn = ttk.Frame(when_tab)
+    wh_btn.pack(fill=tk.X, pady=(8, 0))
+    ttk.Button(wh_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
+
+    # ── Tab 3: Weekly Trend ───────────────────────────────────────────────────
+    trend_tab = ttk.Frame(nb, padding=8)
+    nb.add(trend_tab, text="  Weekly Trend  ")
+
+    weekly_rows = db.get_weekly_distraction_rate()
+
+    if not weekly_rows:
+        ttk.Label(trend_tab, text="No session data yet.",
+                  font=("", 13), foreground="gray").pack(expand=True)
+    else:
+        trend_pts: list[tuple[str, float, int, int]] = []
+        for row in weekly_rows:
+            total = row["total_sessions"]
+            dist  = row["distracted_sessions"] or 0
+            rate  = round(dist / total * 100, 1) if total else 0.0
+            trend_pts.append((row["week"], rate, total, dist))
+
+        PT_GAP      = 60
+        T_ML, T_MR  = 58, 24
+        T_MT, T_MB  = 44, 64
+        T_CH        = 220
+        n_pts        = len(trend_pts)
+        t_canvas_w   = T_ML + T_MR + max(1, n_pts - 1) * PT_GAP + (PT_GAP if n_pts == 1 else 10)
+        t_canvas_h   = T_MT + T_CH + T_MB
+        T_Y_MAX      = 100.0
+        DIST_CLR_T   = "#e15759"
+
+        t_rate_to_y = lambda r: T_MT + T_CH - int(T_CH * r / T_Y_MAX)  # noqa: E731
+        t_pt_x      = lambda i: T_ML + (PT_GAP // 2 if n_pts == 1 else i * PT_GAP)  # noqa: E731
+
+        trend_btn = ttk.Frame(trend_tab)
+        trend_btn.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 6))
+        ttk.Button(trend_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
+
+        t_scroll = ttk.Frame(trend_tab)
+        t_scroll.pack(fill=tk.BOTH, expand=True)
+        t_hsb = ttk.Scrollbar(t_scroll, orient="horizontal")
+        t_hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        cv_trend = tk.Canvas(t_scroll, bg="white", highlightthickness=0,
+                             xscrollcommand=t_hsb.set)
+        cv_trend.pack(fill=tk.BOTH, expand=True)
+        t_hsb.config(command=cv_trend.xview)
+        cv_trend.configure(scrollregion=(0, 0, t_canvas_w, t_canvas_h))
+        cv_trend.bind("<MouseWheel>",
+                      lambda e: cv_trend.xview_scroll(int(-1 * (e.delta / 30)), "units"))
+
+        for i in range(6):
+            pct = i * 20
+            gy  = t_rate_to_y(pct)
+            cv_trend.create_line(T_ML, gy, t_canvas_w - T_MR, gy,
+                                 fill="#e8e8e8", dash=(3, 4))
+            cv_trend.create_text(T_ML - 4, gy, text=f"{pct}%",
+                                 anchor="e", font=("", 10), fill="#888")
+        cv_trend.create_line(T_ML, T_MT, T_ML, T_MT + T_CH, fill="#ccc")
+        cv_trend.create_line(T_ML, T_MT + T_CH, t_canvas_w - T_MR, T_MT + T_CH, fill="#ccc")
+        cv_trend.create_text(
+            (T_ML + t_canvas_w - T_MR) / 2, 10,
+            text="Weekly Distraction Rate",
+            anchor="n", font=("", 13, "bold"), fill="#333",
+        )
+
+        coords = [(t_pt_x(i), t_rate_to_y(pt[1])) for i, pt in enumerate(trend_pts)]
+
+        for i in range(len(coords) - 1):
+            cv_trend.create_line(
+                coords[i][0], coords[i][1], coords[i + 1][0], coords[i + 1][1],
+                fill=DIST_CLR_T, width=2,
+            )
+
+        DOT_R = 5
+        for pt, (cx, cy) in zip(trend_pts, coords):
+            week, rate, total, dist = pt
+            cv_trend.create_oval(cx - DOT_R, cy - DOT_R, cx + DOT_R, cy + DOT_R,
+                                 fill=DIST_CLR_T, outline="white", width=2)
+            cv_trend.create_text(cx, cy - DOT_R - 4, text=f"{rate:.0f}%",
+                                 anchor="s", font=("", 10, "bold"), fill=DIST_CLR_T)
+            # Week label ("W23") rotated below x-axis
+            cv_trend.create_text(cx, T_MT + T_CH + 5, text=week[5:],
+                                 anchor="nw", font=("", 9), fill="#555", angle=45)
+
+        cv_trend.after(150, lambda: cv_trend.xview_moveto(1.0))
+
+    root.mainloop()
+
+
 # ─── Breathing exercise ───────────────────────────────────────────────────────
 
 def show_breathing_exercise() -> None:
