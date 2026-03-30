@@ -19,6 +19,11 @@ A macOS menu bar app for tracking focused work sessions. Built with Python, it l
   - Average focus by time of day (morning / afternoon / evening / night)
   - Average focus by topic
   - Total sessions, total focus time, overall average focus rating
+  - Daily study-time histogram by topic
+- **Insights (Beta)** — distraction analytics window:
+  - Top distraction words (frequency table with visual bar)
+  - Distraction rate by hour of day and day of week
+  - Weekly distraction rate trend line chart
 - **Guided meditations** accessible any time from the menu:
   - 💨 **Breathing Exercise (1 min)** — animated box breathing (4 s inhale · 4 s hold · 4 s exhale · 4 s hold), backed by research on HRV and parasympathetic activation
   - 🌿 **5-4-3-2-1 Grounding** — step-by-step sensory grounding with emoji cues (👁️ see · 🖐️ touch · 👂 hear · 👃 smell · 👅 taste) and optional text fields to write down what you notice
@@ -62,7 +67,8 @@ The `🍅` icon will appear in your menu bar. The SQLite database is created aut
 | `⏹ Stop Session` | Cancels the current session (no log entry created) |
 | `✓ Show countdown` | Toggles the clock display next to the icon; when off, only `🍅` (or `⏸` if paused) is shown |
 | `⚙ Configure…` | Slider to set session length from 5 to 55 minutes |
-| `📋 View History` | Open the history & stats window |
+| `📋 View History` | Open the history & stats window (session log, statistics, daily chart) |
+| `🔍 Insights (Beta)` | Open the distraction insights window |
 | `🧘 Meditate ▶` | Submenu with two guided meditations (available any time) |
 | `  💨 Breathing Exercise (1 min)` | Animated box-breathing timer with dark-mode UI |
 | `  🌿 5-4-3-2-1 Grounding` | Step-by-step sensory grounding with emoji cues and text fields |
@@ -84,7 +90,7 @@ The `🍅` icon will appear in your menu bar. The SQLite database is created aut
 3. Need a moment? Click `⏸ Pause Session` — the timer freezes. Click `▶ Resume Session` to continue.
 4. When the timer hits zero, a macOS notification plays a sound and a popup form appears.
 5. Rate your focus, add a topic, note any distractions, then hit **Save Session** (or **Skip** to discard).
-6. Review trends any time via **View History**.
+6. Review trends any time via **View History** or dig into distractions via **Insights (Beta)**.
 
 ---
 
@@ -94,7 +100,7 @@ The `🍅` icon will appear in your menu bar. The SQLite database is created aut
 StudyTracker/
 ├── main.py          # rumps menu bar app and timer logic
 ├── db.py            # SQLite setup, writes, and aggregation queries
-├── forms.py         # All tkinter UI (configure dialog, session form, history window)
+├── forms.py         # All tkinter UI (configure dialog, session form, history window, insights window)
 ├── requirements.txt
 └── README.md
 ```
