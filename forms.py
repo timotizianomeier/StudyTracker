@@ -197,8 +197,10 @@ def show_session_form(duration_minutes: int) -> dict | None:
 
     # Enable trackpad / mouse-wheel scrolling anywhere in the window.
     # bind_all catches the event even when the pointer is over a child widget.
+    # Use sign-only scrolling so small trackpad deltas (e.g. 3) don't round to 0.
     def _on_mousewheel(event: tk.Event) -> None:
-        canvas.yview_scroll(int(-1 * (event.delta / 30)), "units")
+        if event.delta:
+            canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
 
     root.bind_all("<MouseWheel>", _on_mousewheel)
 
@@ -396,9 +398,10 @@ def show_history_window() -> None:
         f"{summary.get('total_minutes', 0) or 0} total minutes  •  "
         f"Avg focus: {summary.get('avg_focus') or '–'}"
     )
-    ttk.Label(log_tab, text=status_text, foreground="gray", anchor="w").pack(
-        fill=tk.X, padx=8, pady=(0, 6)
-    )
+    log_bottom = ttk.Frame(log_tab)
+    log_bottom.pack(fill=tk.X, padx=8, pady=(0, 6))
+    ttk.Label(log_bottom, text=status_text, foreground="gray", anchor="w").pack(side=tk.LEFT)
+    ttk.Button(log_bottom, text="Close", command=root.destroy).pack(side=tk.RIGHT)
 
     # ── Tab 2: Statistics ─────────────────────────────────────────────────────
     stats_tab = ttk.Frame(nb, padding=16)
@@ -506,13 +509,13 @@ def show_history_window() -> None:
         hist_topics = sorted(all_topics)
 
         def _day_avg_focus(day: str) -> float | None:
-            """Weighted average focus for the day (weighted by session count)."""
-            total_s, weighted = 0, 0.0
+            """Weighted average focus for the day (weighted by duration in minutes)."""
+            total_m, weighted = 0.0, 0.0
             for _total_m, _af, _s in day_topic[day].values():
                 if _af is not None:
-                    weighted += _af * _s
-                    total_s  += _s
-            return round(weighted / total_s, 1) if total_s else None
+                    weighted += _af * _total_m
+                    total_m  += _total_m
+            return round(weighted / total_m, 1) if total_m else None
 
         _PALETTE = [
             "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
@@ -536,9 +539,14 @@ def show_history_window() -> None:
         def _min_to_y(minutes: float) -> int:
             return MT + CH - int(CH * minutes / (_y_max * 60))
 
+        # ── Close button (fixed, at very bottom) ─────────────────────────
+        hist_btn_bar = ttk.Frame(hist_tab)
+        hist_btn_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=8, pady=(0, 6))
+        ttk.Button(hist_btn_bar, text="Close", command=root.destroy).pack(side=tk.RIGHT)
+
         # ── Legend (fixed, below chart) ──────────────────────────────────
         leg_frame = ttk.Frame(hist_tab)
-        leg_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=ML + 8, pady=(0, 6))
+        leg_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=ML + 8, pady=(0, 4))
         for _t in hist_topics:
             _swatch = tk.Canvas(leg_frame, width=14, height=14,
                                 highlightthickness=0, bg=topic_color[_t])

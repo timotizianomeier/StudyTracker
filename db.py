@@ -62,10 +62,10 @@ def get_stats_by_topic() -> list[sqlite3.Row]:
     with _connect() as conn:
         return conn.execute("""
             SELECT
-                COALESCE(NULLIF(topic, ''), '(no topic)') AS topic,
-                ROUND(AVG(focus), 1)                       AS avg_focus,
-                COUNT(*)                                   AS sessions,
-                SUM(duration)                              AS total_min
+                COALESCE(NULLIF(topic, ''), '(no topic)')            AS topic,
+                ROUND(SUM(focus * duration) * 1.0 / SUM(duration), 1) AS avg_focus,
+                COUNT(*)                                              AS sessions,
+                SUM(duration)                                         AS total_min
             FROM sessions
             WHERE focus IS NOT NULL
             GROUP BY COALESCE(NULLIF(topic, ''), '(no topic)')
@@ -86,8 +86,8 @@ def get_stats_by_time_of_day() -> list[sqlite3.Row]:
                         THEN '🌆 Evening (17–23)'
                     ELSE '🌙 Night (23–7)'
                 END AS period,
-                ROUND(AVG(focus), 1) AS avg_focus,
-                COUNT(*)             AS sessions
+                ROUND(SUM(focus * duration) * 1.0 / SUM(duration), 1) AS avg_focus,
+                COUNT(*)                                              AS sessions
             FROM sessions
             WHERE focus IS NOT NULL
             GROUP BY period
@@ -108,9 +108,10 @@ def get_daily_by_topic() -> list[sqlite3.Row]:
             SELECT
                 DATE(timestamp) AS day,
                 COALESCE(NULLIF(topic, ''), '(no topic)') AS topic,
-                SUM(duration)        AS total_min,
-                ROUND(AVG(focus), 1) AS avg_focus,
-                COUNT(*)             AS sessions
+                SUM(duration)                                                                    AS total_min,
+                ROUND(SUM(CASE WHEN focus IS NOT NULL THEN focus * duration END) * 1.0 /
+                      NULLIF(SUM(CASE WHEN focus IS NOT NULL THEN duration END), 0), 1)          AS avg_focus,
+                COUNT(*)                                                                         AS sessions
             FROM sessions
             GROUP BY day, topic
             ORDER BY day ASC
@@ -123,7 +124,8 @@ def get_summary() -> dict:
             SELECT
                 COUNT(*)          AS total_sessions,
                 SUM(duration)     AS total_minutes,
-                ROUND(AVG(focus), 1) AS avg_focus
+                ROUND(SUM(CASE WHEN focus IS NOT NULL THEN focus * duration END) * 1.0 /
+                      NULLIF(SUM(CASE WHEN focus IS NOT NULL THEN duration END), 0), 1) AS avg_focus
             FROM sessions
         """).fetchone()
         return dict(row) if row else {}
