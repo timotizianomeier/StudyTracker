@@ -274,13 +274,6 @@ class PomodoroApp(rumps.App):
         _launch_window("insights")
 
     def _view_history(self, _: rumps.MenuItem) -> None:
-        if self.is_running:
-            rumps.alert(
-                title="Session in progress",
-                message="Stop or finish your current session before viewing history.",
-                ok="OK",
-            )
-            return
         _launch_window("history")
 
     def _breathing_exercise(self, _: rumps.MenuItem) -> None:
