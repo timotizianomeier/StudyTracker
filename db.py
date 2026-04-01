@@ -201,6 +201,20 @@ def get_distraction_by_weekday() -> list[sqlite3.Row]:
         """).fetchall()
 
 
+def get_daily_distraction_rate() -> list[sqlite3.Row]:
+    """Distraction totals per calendar day (YYYY-MM-DD)."""
+    with _connect() as conn:
+        return conn.execute("""
+            SELECT
+                strftime('%Y-%m-%d', timestamp) AS day,
+                COUNT(*)        AS total_sessions,
+                SUM(distracted) AS distracted_sessions
+            FROM sessions
+            GROUP BY day
+            ORDER BY day
+        """).fetchall()
+
+
 def get_weekly_distraction_rate() -> list[sqlite3.Row]:
     """Distraction totals per ISO calendar week (YYYY-Www)."""
     with _connect() as conn:

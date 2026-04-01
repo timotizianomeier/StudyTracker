@@ -1,6 +1,7 @@
 """All tkinter UI: configure dialog, session feedback form, history window,
 breathing exercise, and 5-4-3-2-1 grounding."""
 
+import datetime
 import math
 import tkinter as tk
 from tkinter import ttk
@@ -864,7 +865,91 @@ def show_insights_window() -> None:
     wh_btn.pack(fill=tk.X, pady=(8, 0))
     ttk.Button(wh_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
 
-    # ── Tab 3: Weekly Trend ───────────────────────────────────────────────────
+    # ── Tab 3: Daily Trend ────────────────────────────────────────────────────
+    daily_tab = ttk.Frame(nb, padding=8)
+    nb.add(daily_tab, text="  Daily Trend  ")
+
+    daily_rows = db.get_daily_distraction_rate()
+
+    if not daily_rows:
+        ttk.Label(daily_tab, text="No session data yet.",
+                  font=("", 13), foreground="gray").pack(expand=True)
+    else:
+        daily_pts: list[tuple[str, float, int, int]] = []
+        for row in daily_rows:
+            total = row["total_sessions"]
+            dist  = row["distracted_sessions"] or 0
+            rate  = round(dist / total * 100, 1) if total else 0.0
+            daily_pts.append((row["day"], rate, total, dist))
+
+        D_PT_GAP     = 48
+        D_ML, D_MR   = 58, 24
+        D_MT, D_MB   = 44, 64
+        D_CH         = 220
+        d_n           = len(daily_pts)
+        d_canvas_w    = D_ML + D_MR + max(1, d_n - 1) * D_PT_GAP + (D_PT_GAP if d_n == 1 else 10)
+        d_canvas_h    = D_MT + D_CH + D_MB
+        D_Y_MAX       = 100.0
+        DIST_CLR_D    = "#e15759"
+
+        d_rate_to_y = lambda r: D_MT + D_CH - int(D_CH * r / D_Y_MAX)  # noqa: E731
+        d_pt_x      = lambda i: D_ML + (D_PT_GAP // 2 if d_n == 1 else i * D_PT_GAP)  # noqa: E731
+
+        daily_btn = ttk.Frame(daily_tab)
+        daily_btn.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 6))
+        ttk.Button(daily_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
+
+        d_scroll = ttk.Frame(daily_tab)
+        d_scroll.pack(fill=tk.BOTH, expand=True)
+        d_hsb = ttk.Scrollbar(d_scroll, orient="horizontal")
+        d_hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        cv_daily = tk.Canvas(d_scroll, bg="white", highlightthickness=0,
+                             xscrollcommand=d_hsb.set)
+        cv_daily.pack(fill=tk.BOTH, expand=True)
+        d_hsb.config(command=cv_daily.xview)
+        cv_daily.configure(scrollregion=(0, 0, d_canvas_w, d_canvas_h))
+        cv_daily.bind("<MouseWheel>",
+                      lambda e: cv_daily.xview_scroll(int(-1 * (e.delta / 30)), "units"))
+
+        for i in range(6):
+            pct = i * 20
+            gy  = d_rate_to_y(pct)
+            cv_daily.create_line(D_ML, gy, d_canvas_w - D_MR, gy,
+                                 fill="#e8e8e8", dash=(3, 4))
+            cv_daily.create_text(D_ML - 4, gy, text=f"{pct}%",
+                                 anchor="e", font=("", 10), fill="#888")
+        cv_daily.create_line(D_ML, D_MT, D_ML, D_MT + D_CH, fill="#ccc")
+        cv_daily.create_line(D_ML, D_MT + D_CH, d_canvas_w - D_MR, D_MT + D_CH, fill="#ccc")
+        cv_daily.create_text(
+            (D_ML + d_canvas_w - D_MR) / 2, 10,
+            text="Daily Distraction Rate",
+            anchor="n", font=("", 13, "bold"), fill="#333",
+        )
+
+        d_coords = [(d_pt_x(i), d_rate_to_y(pt[1])) for i, pt in enumerate(daily_pts)]
+
+        for i in range(len(d_coords) - 1):
+            cv_daily.create_line(
+                d_coords[i][0], d_coords[i][1], d_coords[i + 1][0], d_coords[i + 1][1],
+                fill=DIST_CLR_D, width=2,
+            )
+
+        DOT_R = 5
+        for pt, (cx, cy) in zip(daily_pts, d_coords):
+            day, rate, total, dist = pt
+            cv_daily.create_oval(cx - DOT_R, cy - DOT_R, cx + DOT_R, cy + DOT_R,
+                                 fill=DIST_CLR_D, outline="white", width=2)
+            cv_daily.create_text(cx, cy - DOT_R - 4, text=f"{rate:.0f}%",
+                                 anchor="s", font=("", 10, "bold"), fill=DIST_CLR_D)
+            # Date label (e.g. "Mon\n31") rotated below x-axis
+            d_obj = datetime.date.fromisoformat(day)
+            lbl = d_obj.strftime("%a\n%-d")
+            cv_daily.create_text(cx, D_MT + D_CH + 5, text=lbl,
+                                 anchor="nw", font=("", 9), fill="#555", angle=45)
+
+        cv_daily.after(150, lambda: cv_daily.xview_moveto(1.0))
+
+    # ── Tab 4: Weekly Trend ───────────────────────────────────────────────────
     trend_tab = ttk.Frame(nb, padding=8)
     nb.add(trend_tab, text="  Weekly Trend  ")
 
