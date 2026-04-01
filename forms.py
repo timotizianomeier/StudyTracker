@@ -1028,8 +1028,8 @@ def show_breathing_exercise() -> None:
         root.quit()
 
     stop_btn = tk.Button(root, text="Stop", command=_stop,
-                          bg="#1d3a52", fg="white", relief="flat",
-                          activebackground="#2a5272", activeforeground="white",
+                          bg="#c0392b", fg="white", relief="flat",
+                          activebackground="#e74c3c", activeforeground="white",
                           font=("", 12), padx=18, pady=6, cursor="hand2", bd=0)
     stop_btn.pack(pady=(0, 14))
 
