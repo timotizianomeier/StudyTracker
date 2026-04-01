@@ -10,6 +10,16 @@ import db
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
+def _center_window(root: tk.Tk) -> None:
+    """Position the window in the center of the screen."""
+    root.update_idletasks()
+    w = root.winfo_width()
+    h = root.winfo_height()
+    x = (root.winfo_screenwidth() - w) // 2
+    y = (root.winfo_screenheight() - h) // 2
+    root.geometry(f"+{x}+{y}")
+
+
 def _bring_to_front(root: tk.Tk) -> None:
     """Raise and focus the window once it is rendered.
 
@@ -18,6 +28,8 @@ def _bring_to_front(root: tk.Tk) -> None:
     and steal keyboard focus — done twice (immediately + after 100 ms) so it
     works regardless of how long the initial widget build takes.
     """
+    _center_window(root)
+
     def _raise() -> None:
         try:
             root.lift()
@@ -168,41 +180,11 @@ def show_session_form(duration_minutes: int) -> dict | None:
 
     root = tk.Tk()
     root.title("Session Complete!")
-    root.geometry("460x540")
     root.resizable(False, False)
     _theme(root)
-    _bring_to_front(root)
 
-    # ── Scrollable container ──────────────────────────────────────────────────
-    outer = ttk.Frame(root)
-    outer.pack(fill=tk.BOTH, expand=True)
-
-    canvas = tk.Canvas(outer, highlightthickness=0)
-    vscroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-    canvas.configure(yscrollcommand=vscroll.set)
-    vscroll.pack(side=tk.RIGHT, fill=tk.Y)
-    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-    frame = ttk.Frame(canvas, padding=24)
-    canvas_window = canvas.create_window((0, 0), window=frame, anchor="nw")
-
-    def _on_frame_configure(_: tk.Event) -> None:
-        canvas.configure(scrollregion=canvas.bbox("all"))
-
-    def _on_canvas_configure(event: tk.Event) -> None:
-        canvas.itemconfig(canvas_window, width=event.width)
-
-    frame.bind("<Configure>", _on_frame_configure)
-    canvas.bind("<Configure>", _on_canvas_configure)
-
-    # Enable trackpad / mouse-wheel scrolling anywhere in the window.
-    # bind_all catches the event even when the pointer is over a child widget.
-    # Use sign-only scrolling so small trackpad deltas (e.g. 3) don't round to 0.
-    def _on_mousewheel(event: tk.Event) -> None:
-        if event.delta:
-            canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
-
-    root.bind_all("<MouseWheel>", _on_mousewheel)
+    frame = ttk.Frame(root, padding=24)
+    frame.pack(fill=tk.BOTH, expand=True)
 
     # ── Header ────────────────────────────────────────────────────────────────
     ttk.Label(frame, text="🍅  Session Complete!", font=("", 17, "bold")).pack(pady=(0, 4))
@@ -269,11 +251,17 @@ def show_session_form(duration_minutes: int) -> dict | None:
     )
     reason_text.pack(fill=tk.X, pady=(2, 0))
 
+    def _resize_to_fit() -> None:
+        root.update_idletasks()
+        root.geometry(f"460x{root.winfo_reqheight()}")
+        _center_window(root)
+
     def _toggle_reason(*_: object) -> None:
         if distracted_var.get():
             reason_container.pack(fill=tk.X, pady=(10, 0))
         else:
             reason_container.pack_forget()
+        _resize_to_fit()
 
     distracted_var.trace_add("write", _toggle_reason)
 
@@ -302,6 +290,9 @@ def show_session_form(duration_minutes: int) -> dict | None:
 
     root.protocol("WM_DELETE_WINDOW", _skip)
     root.bind("<Escape>", lambda _: _skip())
+
+    _resize_to_fit()
+    _bring_to_front(root)
 
     root.mainloop()
     root.destroy()
