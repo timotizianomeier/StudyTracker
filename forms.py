@@ -240,22 +240,39 @@ def show_session_form(duration_minutes: int) -> dict | None:
         current = topic_var.get()
         for t, b in chip_btns.items():
             if current == t:
-                b.config(bg="#007aff", fg="white")
+                b.config(bg="#0055cc", fg="#ffffff")
             else:
-                b.config(bg="#e8e8e8", fg="#333333")
+                b.config(bg="#aaaaaa", fg="#000000")
 
     if existing_topics:
-        chips_frame = ttk.Frame(topic_lf)
-        chips_frame.pack(fill=tk.X, pady=(0, 8))
-        for _topic in existing_topics:
-            _btn = tk.Button(
-                chips_frame, text=_topic, relief="flat",
-                bg="#e8e8e8", fg="#333333",
-                font=("", 11), padx=10, pady=4, cursor="hand2", bd=0,
-                command=lambda t=_topic: topic_var.set(t),
-            )
-            _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
-            chip_btns[_topic] = _btn
+        chips_outer = ttk.Frame(topic_lf)
+        chips_outer.pack(fill=tk.X, pady=(0, 8))
+
+        # Lay out chips in wrapping rows; ~7 px per char at 11 pt, 22 px h-padding
+        AVAIL_W = 360
+        rows_of_topics: list[list[str]] = [[]]
+        row_w = 0
+        for _t in existing_topics:
+            _bw = len(_t) * 7 + 28  # estimated button width + gap
+            if row_w > 0 and row_w + _bw > AVAIL_W:
+                rows_of_topics.append([])
+                row_w = 0
+            rows_of_topics[-1].append(_t)
+            row_w += _bw
+
+        for _ri, _row_topics in enumerate(rows_of_topics):
+            _row_frame = ttk.Frame(chips_outer)
+            _row_frame.pack(fill=tk.X, anchor=tk.W, pady=(0 if _ri == 0 else 2, 0))
+            for _topic in _row_topics:
+                _btn = tk.Button(
+                    _row_frame, text=_topic, relief="flat",
+                    bg="#aaaaaa", fg="#000000",
+                    font=("", 11), padx=10, pady=4, cursor="hand2", bd=0,
+                    command=lambda t=_topic: topic_var.set(t),
+                )
+                _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
+                chip_btns[_topic] = _btn
+
         topic_var.trace_add("write", _on_topic_var_changed)
         ttk.Label(topic_lf, text="Or add a new one:", foreground="gray", font=("", 10)).pack(anchor=tk.W)
     else:
