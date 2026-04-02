@@ -19,6 +19,7 @@ def _center_window(root: tk.Tk) -> None:
     x = (root.winfo_screenwidth() - w) // 2
     y = (root.winfo_screenheight() - h) // 2
     root.geometry(f"+{x}+{y}")
+    root.deiconify()
 
 
 def _bring_to_front(root: tk.Tk) -> None:
@@ -96,6 +97,7 @@ def show_start_window(current_minutes: int) -> int | None:
     result: list[int | None] = [None]
 
     root = tk.Tk()
+    root.withdraw()
     root.title("Start Session")
     root.geometry("360x230")
     root.resizable(False, False)
@@ -138,6 +140,7 @@ def show_configure_window(current_minutes: int) -> int | None:
     result: list[int | None] = [None]
 
     root = tk.Tk()
+    root.withdraw()
     root.title("Configure Session")
     root.geometry("360x230")
     root.resizable(False, False)
@@ -180,6 +183,7 @@ def show_session_form(duration_minutes: int) -> dict | None:
     result: list[dict | None] = [None]
 
     root = tk.Tk()
+    root.withdraw()
     root.title("Session Complete!")
     root.resizable(False, False)
     _theme(root)
@@ -200,10 +204,14 @@ def show_session_form(duration_minutes: int) -> dict | None:
     focus_lf = ttk.LabelFrame(frame, text="  Focus Rating  ", padding=12)
     focus_lf.pack(fill=tk.X, pady=(0, 12))
 
-    focus_var = tk.DoubleVar(value=7.0)
+    _summary = db.get_summary()
+    _avg = _summary.get("avg_focus")
+    default_focus = float(max(1, min(10, round(_avg))) if _avg else 7)
+
+    focus_var = tk.DoubleVar(value=default_focus)
 
     rating_lbl = ttk.Label(
-        focus_lf, text="7", font=("", 32, "bold"), width=3, anchor="center"
+        focus_lf, text=str(int(default_focus)), font=("", 32, "bold"), width=3, anchor="center"
     )
     rating_lbl.pack()
 
@@ -225,13 +233,38 @@ def show_session_form(duration_minutes: int) -> dict | None:
     topic_lf.pack(fill=tk.X, pady=(0, 12))
 
     topic_var = tk.StringVar()
+    existing_topics = db.get_all_topics()
+    chip_btns: dict[str, tk.Button] = {}
+
+    def _on_topic_var_changed(*_: object) -> None:
+        current = topic_var.get()
+        for t, b in chip_btns.items():
+            if current == t:
+                b.config(bg="#007aff", fg="white")
+            else:
+                b.config(bg="#e8e8e8", fg="#333333")
+
+    if existing_topics:
+        chips_frame = ttk.Frame(topic_lf)
+        chips_frame.pack(fill=tk.X, pady=(0, 8))
+        for _topic in existing_topics:
+            _btn = tk.Button(
+                chips_frame, text=_topic, relief="flat",
+                bg="#e8e8e8", fg="#333333",
+                font=("", 11), padx=10, pady=4, cursor="hand2", bd=0,
+                command=lambda t=_topic: topic_var.set(t),
+            )
+            _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
+            chip_btns[_topic] = _btn
+        topic_var.trace_add("write", _on_topic_var_changed)
+        ttk.Label(topic_lf, text="Or add a new one:", foreground="gray", font=("", 10)).pack(anchor=tk.W)
+    else:
+        ttk.Label(
+            topic_lf,
+            text="e.g.  Math homework · Work report · Reading",
+            foreground="gray", font=("", 10),
+        ).pack(anchor=tk.W, pady=(0, 4))
     ttk.Entry(topic_lf, textvariable=topic_var, font=("", 13)).pack(fill=tk.X)
-    ttk.Label(
-        topic_lf,
-        text="e.g.  Math homework · Work report · Reading",
-        foreground="gray",
-        font=("", 10),
-    ).pack(anchor=tk.W, pady=(4, 0))
 
     # ── Distraction ───────────────────────────────────────────────────────────
     distract_lf = ttk.LabelFrame(frame, text="  Distractions  ", padding=12)
@@ -305,6 +338,7 @@ def show_session_form(duration_minutes: int) -> dict | None:
 def show_history_window() -> None:
     """Read-only history & stats viewer."""
     root = tk.Tk()
+    root.withdraw()
     root.title("🍅 Pomodoro History")
     root.geometry("900x600")
     root.minsize(700, 450)
@@ -639,6 +673,7 @@ def show_history_window() -> None:
 def show_insights_window() -> None:
     """Distraction Insights window with three analytical views."""
     root = tk.Tk()
+    root.withdraw()
     root.title("🔍 Insights (Beta)")
     root.geometry("960x680")
     root.minsize(780, 520)
@@ -665,7 +700,7 @@ def show_insights_window() -> None:
         font=("", 13),
     ).pack(anchor=tk.W)
 
-    word_data = db.get_distraction_word_freq(top_n=25)
+    word_data = db.get_distraction_word_freq(top_n=10)
 
     if not word_data:
         ttk.Label(words_tab, text="No distraction notes recorded yet.",
@@ -1057,6 +1092,7 @@ def show_breathing_exercise() -> None:
     CW = CH            = 260
 
     root = tk.Tk()
+    root.withdraw()
     root.title("Breathing Exercise")
     root.geometry("310x440")
     root.resizable(False, False)
@@ -1103,10 +1139,7 @@ def show_breathing_exercise() -> None:
         running[0] = False
         root.quit()
 
-    stop_btn = tk.Button(root, text="Stop", command=_stop,
-                          bg="#c0392b", fg="white", relief="flat",
-                          activebackground="#e74c3c", activeforeground="white",
-                          font=("", 12), padx=18, pady=6, cursor="hand2", bd=0)
+    stop_btn = ttk.Button(root, text="Stop", command=_stop)
     stop_btn.pack(pady=(0, 14))
 
     def _tick() -> None:
@@ -1196,6 +1229,7 @@ def show_grounding_exercise() -> None:
     ]
 
     root = tk.Tk()
+    root.withdraw()
     root.title("5-4-3-2-1 Grounding")
     root.geometry("430x530")
     root.resizable(False, False)

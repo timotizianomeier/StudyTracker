@@ -229,6 +229,19 @@ def get_weekly_distraction_rate() -> list[sqlite3.Row]:
         """).fetchall()
 
 
+def get_all_topics() -> list[str]:
+    """Return distinct topics used in past sessions, ordered by most recently used."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT topic, MAX(timestamp) AS last_used "
+            "FROM sessions "
+            "WHERE topic IS NOT NULL AND topic != '' "
+            "GROUP BY topic "
+            "ORDER BY last_used DESC"
+        ).fetchall()
+    return [row["topic"] for row in rows]
+
+
 def get_summary() -> dict:
     with _connect() as conn:
         row = conn.execute("""
