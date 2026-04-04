@@ -74,7 +74,7 @@ def _build_duration_picker(
     val_label.pack(pady=(4, 10))
 
     def _on_slider(val: str) -> None:
-        val_label.config(text=f"{int(float(val))} min")
+        val_label.config(text=f"{round(float(val))} min")
 
     slider_row = ttk.Frame(frame)
     slider_row.pack(fill=tk.X, pady=(0, 6))
