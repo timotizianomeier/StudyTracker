@@ -138,7 +138,7 @@ def get_distraction_summary() -> dict:
     return {"total_sessions": 0, "distracted_sessions": 0, "distraction_rate": 0.0}
 
 
-def get_distraction_word_freq(top_n: int = 25) -> list[tuple[str, int]]:
+def get_distraction_word_freq(top_n: int | None = None) -> list[tuple[str, int]]:
     """Parse free-text reason fields and return top-N words with counts."""
     import re
     from collections import Counter

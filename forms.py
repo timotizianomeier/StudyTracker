@@ -700,7 +700,7 @@ def show_insights_window() -> None:
     nb = ttk.Notebook(root)
     nb.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-    # ── Tab 1: Top Distraction Words ──────────────────────────────────────────
+    # ── Tab 1: Distraction Words ──────────────────────────────────────────────
     words_tab = ttk.Frame(nb, padding=12)
     nb.add(words_tab, text="  Top Words  ")
 
@@ -710,21 +710,84 @@ def show_insights_window() -> None:
     dist_pct  = dist_sum["distraction_rate"]
 
     banner = ttk.LabelFrame(words_tab, text="  Overview  ", padding=10)
-    banner.pack(fill=tk.X, pady=(0, 12))
+    banner.pack(fill=tk.X, pady=(0, 8))
     ttk.Label(
         banner,
         text=f"Sessions with distractions:  {dist_s} of {total_s}  ({dist_pct}%)",
         font=("", 13),
     ).pack(anchor=tk.W)
 
-    word_data = db.get_distraction_word_freq(top_n=10)
+    word_data = db.get_distraction_word_freq()
 
     if not word_data:
         ttk.Label(words_tab, text="No distraction notes recorded yet.",
                   font=("", 13), foreground="gray").pack(expand=True)
+        w_btn = ttk.Frame(words_tab)
+        w_btn.pack(fill=tk.X, pady=(8, 0))
+        ttk.Button(w_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
     else:
+        import tkinter.font as _tkfont
+        import math as _math
+        import random as _random_mod
+
         max_count = word_data[0][1]
-        BAR_LEN   = 28
+        min_count = word_data[-1][1]
+
+        # ── Word cloud ────────────────────────────────────────────────────────
+        WC_W, WC_H     = 900, 190
+        WC_MIN_SZ      = 11
+        WC_MAX_SZ      = 36
+        WC_COLORS      = [
+            "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+            "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
+        ]
+
+        wc_lf = ttk.LabelFrame(words_tab, text="  Word Cloud  ", padding=6)
+        wc_lf.pack(fill=tk.X, pady=(0, 8))
+        cv_wc = tk.Canvas(wc_lf, bg="white", height=WC_H, width=WC_W,
+                          highlightthickness=0)
+        cv_wc.pack()
+
+        _placed: list[tuple[float, float, float, float]] = []
+        _wc_cx, _wc_cy = WC_W / 2.0, WC_H / 2.0
+        _rng = _random_mod.Random(42)
+
+        for _idx, (_word, _count) in enumerate(word_data):
+            _t = (_count - min_count) / (max_count - min_count) if max_count > min_count else 1.0
+            _fsz  = round(WC_MIN_SZ + _t * (WC_MAX_SZ - WC_MIN_SZ))
+            _wgt  = "bold" if _t >= 0.5 else "normal"
+            _fobj = _tkfont.Font(family="Helvetica", size=_fsz, weight=_wgt)
+            _tw   = _fobj.measure(_word) + 6
+            _th   = _fobj.metrics("linespace") + 4
+            _color = WC_COLORS[_idx % len(WC_COLORS)]
+
+            _angle = _rng.uniform(0, 2 * _math.pi)
+            _step  = 0
+            while _step < 700:
+                _r  = _step * 0.55
+                _tx = _wc_cx + _r * _math.cos(_angle)
+                _ty = _wc_cy + _r * _math.sin(_angle)
+                _tx = max(_tw / 2 + 2, min(WC_W - _tw / 2 - 2, _tx))
+                _ty = max(_th / 2 + 2, min(WC_H - _th / 2 - 2, _ty))
+                _bx0, _by0 = _tx - _tw / 2, _ty - _th / 2
+                _bx1, _by1 = _tx + _tw / 2, _ty + _th / 2
+                if not any(
+                    _bx1 > _px0 and _bx0 < _px1 and _by1 > _py0 and _by0 < _py1
+                    for _px0, _py0, _px1, _py1 in _placed
+                ):
+                    _placed.append((_bx0, _by0, _bx1, _by1))
+                    cv_wc.create_text(_tx, _ty, text=_word, font=_fobj, fill=_color)
+                    break
+                _angle += 0.28
+                _step  += 1
+            # words that don't fit are silently skipped
+
+        # ── Scrollable word table ─────────────────────────────────────────────
+        BAR_LEN = 28
+
+        w_btn = ttk.Frame(words_tab)
+        w_btn.pack(side=tk.BOTTOM, fill=tk.X, pady=(4, 0))
+        ttk.Button(w_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
 
         cols = ("rank", "word", "count", "bar")
         wf = ttk.Frame(words_tab)
@@ -760,10 +823,6 @@ def show_insights_window() -> None:
 
         tree.tag_configure("even", background="#f0f0f0", foreground="#000000")
         tree.tag_configure("odd",  background="#ffffff", foreground="#000000")
-
-    w_btn = ttk.Frame(words_tab)
-    w_btn.pack(fill=tk.X, pady=(8, 0))
-    ttk.Button(w_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
 
     # ── Tab 2: When Distracted ────────────────────────────────────────────────
     when_tab = ttk.Frame(nb, padding=8)
