@@ -1083,6 +1083,224 @@ def show_insights_window() -> None:
 
         cv_trend.after(150, lambda: cv_trend.xview_moveto(1.0))
 
+    # ── Tab 5: Focus vs Study Time (scatter + regression) ────────────────────
+    scatter_tab = ttk.Frame(nb, padding=8)
+    nb.add(scatter_tab, text="  Focus vs Time  ")
+
+    scatter_rows = db.get_daily_focus_vs_time()
+    scatter_pts: list[tuple[float, float]] = [
+        (float(r["total_min"]), float(r["avg_focus"])) for r in scatter_rows
+    ]
+
+    if len(scatter_pts) < 2:
+        ttk.Label(scatter_tab, text="Not enough data yet (need ≥ 2 days with focus scores).",
+                  font=("", 13), foreground="gray").pack(expand=True)
+        ttk.Button(scatter_tab, text="Close", command=root.destroy).pack(side=tk.BOTTOM, anchor=tk.E, pady=4)
+    else:
+        # ── Regression math (pure Python) ────────────────────────────────────
+        xs = [p[0] for p in scatter_pts]
+        ys = [p[1] for p in scatter_pts]
+        n  = len(xs)
+        x_mean = sum(xs) / n
+        y_mean = sum(ys) / n
+        sxx    = sum((x - x_mean) ** 2 for x in xs)
+        sxy    = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, ys))
+        slope     = sxy / sxx if sxx > 0 else 0.0
+        intercept = y_mean - slope * x_mean
+        y_pred    = [slope * x + intercept for x in xs]
+        ss_tot    = sum((y - y_mean) ** 2 for y in ys)
+        ss_res    = sum((y - yp) ** 2 for y, yp in zip(ys, y_pred))
+        r_sq      = 1.0 - ss_res / ss_tot if ss_tot > 0 else 1.0
+        # Pearson r sign
+        r_sign    = "+" if slope >= 0 else ""
+
+        # ── Canvas layout ─────────────────────────────────────────────────────
+        SC_ML, SC_MR = 68, 24
+        SC_MT, SC_MB = 44, 56
+        SC_CH        = 260
+        SC_CW        = 560
+
+        x_min_v = 0.0
+        x_max_v = max(max(xs) * 1.1, 60.0)
+        y_min_v = 0.0
+        y_max_v = 10.0
+
+        def sc_x(v: float) -> float:
+            return SC_ML + (v - x_min_v) / (x_max_v - x_min_v) * SC_CW
+
+        def sc_y(v: float) -> float:
+            return SC_MT + SC_CH - (v - y_min_v) / (y_max_v - y_min_v) * SC_CH
+
+        sc_canvas_w = SC_ML + SC_CW + SC_MR
+        sc_canvas_h = SC_MT + SC_CH + SC_MB
+
+        sc_outer = ttk.Frame(scatter_tab)
+        sc_outer.pack(fill=tk.BOTH, expand=True)
+
+        sc_btn = ttk.Frame(scatter_tab)
+        sc_btn.pack(fill=tk.X, pady=(4, 0))
+        ttk.Button(sc_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
+
+        # Stats panel on the right
+        stats_frame = ttk.LabelFrame(sc_outer, text="  Regression Stats  ", padding=12)
+        stats_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(8, 0))
+        slope_per_hr = slope * 60  # focus change per hour of study
+        stat_lines = [
+            ("n (days)",  f"{n}"),
+            ("R²",        f"{r_sq:.3f}"),
+            ("Slope",     f"{r_sign}{slope:.4f} focus/min"),
+            ("",          f"({r_sign}{slope_per_hr:.2f} focus/hr)"),
+            ("Intercept", f"{intercept:.2f}"),
+        ]
+        for label, val in stat_lines:
+            row_f = ttk.Frame(stats_frame)
+            row_f.pack(fill=tk.X, pady=2)
+            if label:
+                ttk.Label(row_f, text=f"{label}:", font=("", 11, "bold"), width=10,
+                          anchor="w").pack(side=tk.LEFT)
+            ttk.Label(row_f, text=val, font=("", 11), foreground="#555").pack(side=tk.LEFT)
+
+        interp_txt = (
+            "Positive slope: more study → higher focus" if slope > 0
+            else "Negative slope: more study → lower focus" if slope < 0
+            else "No trend detected"
+        )
+        ttk.Label(stats_frame, text=interp_txt, font=("", 10, "italic"),
+                  foreground="#777", wraplength=160).pack(pady=(12, 0))
+
+        cv_sc = tk.Canvas(sc_outer, bg="white", highlightthickness=0,
+                          width=sc_canvas_w, height=sc_canvas_h)
+        cv_sc.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Grid lines (y-axis: 0,2,4,6,8,10)
+        for yv in range(0, 11, 2):
+            gy = sc_y(yv)
+            cv_sc.create_line(SC_ML, gy, SC_ML + SC_CW, gy, fill="#e8e8e8", dash=(3, 4))
+            cv_sc.create_text(SC_ML - 5, gy, text=str(yv), anchor="e",
+                              font=("", 9), fill="#888")
+
+        # X-axis grid lines (every 30 min up to x_max_v)
+        x_tick = 30
+        xv = x_tick
+        while xv <= x_max_v:
+            gx = sc_x(xv)
+            cv_sc.create_line(gx, SC_MT, gx, SC_MT + SC_CH, fill="#e8e8e8", dash=(3, 4))
+            cv_sc.create_text(gx, SC_MT + SC_CH + 4, text=str(int(xv)),
+                              anchor="n", font=("", 9), fill="#888")
+            xv += x_tick
+
+        # Axes
+        cv_sc.create_line(SC_ML, SC_MT, SC_ML, SC_MT + SC_CH, fill="#bbb", width=1)
+        cv_sc.create_line(SC_ML, SC_MT + SC_CH, SC_ML + SC_CW, SC_MT + SC_CH, fill="#bbb", width=1)
+
+        # Axis labels
+        cv_sc.create_text((SC_ML + SC_ML + SC_CW) / 2, sc_canvas_h - 6,
+                          text="Total study time that day (minutes)",
+                          anchor="s", font=("", 11), fill="#444")
+        cv_sc.create_text(14, (SC_MT + SC_MT + SC_CH) / 2,
+                          text="Avg focus", anchor="center", font=("", 11), fill="#444", angle=90)
+
+        # Title
+        cv_sc.create_text((SC_ML + SC_ML + SC_CW) / 2, 10,
+                          text="Focus vs Study Time per Day",
+                          anchor="n", font=("", 13, "bold"), fill="#333")
+
+        # Regression line (clamped to chart bounds)
+        if sxx > 0:
+            reg_x0 = x_min_v
+            reg_x1 = x_max_v
+            reg_y0 = max(y_min_v, min(y_max_v, slope * reg_x0 + intercept))
+            reg_y1 = max(y_min_v, min(y_max_v, slope * reg_x1 + intercept))
+            cv_sc.create_line(sc_x(reg_x0), sc_y(reg_y0), sc_x(reg_x1), sc_y(reg_y1),
+                              fill="#4e79a7", width=2, dash=(6, 3))
+
+        # Scatter dots
+        DOT_R = 5
+        for xv, yv in scatter_pts:
+            cx = sc_x(xv)
+            cy = sc_y(yv)
+            cv_sc.create_oval(cx - DOT_R, cy - DOT_R, cx + DOT_R, cy + DOT_R,
+                              fill="#f28e2b", outline="white", width=1)
+
+    # ── Tab 6: Start Time Effect ──────────────────────────────────────────────
+    start_tab = ttk.Frame(nb, padding=8)
+    nb.add(start_tab, text="  Start Time Effect  ")
+
+    start_rows = db.get_focus_by_start_hour()
+
+    if not start_rows:
+        ttk.Label(start_tab, text="Not enough data yet.",
+                  font=("", 13), foreground="gray").pack(expand=True)
+        ttk.Button(start_tab, text="Close", command=root.destroy).pack(side=tk.BOTTOM, anchor=tk.E, pady=4)
+    else:
+        start_data = [(r["start_group"], float(r["avg_focus"]), int(r["days"])) for r in start_rows]
+
+        # ── Bar chart ────────────────────────────────────────────────────────
+        ST_ML, ST_MR = 68, 24
+        ST_MT, ST_MB = 60, 80
+        ST_CH        = 240
+        BAR_W        = 100
+        BAR_GAP      = 60
+        n_bars       = len(start_data)
+        st_canvas_w  = ST_ML + ST_MR + n_bars * BAR_W + (n_bars - 1) * BAR_GAP + 20
+        st_canvas_h  = ST_MT + ST_CH + ST_MB
+        ST_Y_MAX     = 10.0
+
+        BAR_COLORS = ["#59a14f", "#f28e2b", "#e15759"]  # green, orange, red
+
+        def st_y(v: float) -> float:
+            return ST_MT + ST_CH - (v / ST_Y_MAX) * ST_CH
+
+        st_outer = ttk.Frame(start_tab)
+        st_outer.pack(fill=tk.BOTH, expand=True)
+
+        st_btn = ttk.Frame(start_tab)
+        st_btn.pack(fill=tk.X, pady=(4, 0))
+        ttk.Button(st_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
+
+        cv_st = tk.Canvas(st_outer, bg="white", highlightthickness=0,
+                          width=st_canvas_w, height=st_canvas_h)
+        cv_st.pack(fill=tk.BOTH, expand=True)
+
+        # Grid lines (y: 0,2,4,6,8,10)
+        for yv in range(0, 11, 2):
+            gy = st_y(yv)
+            cv_st.create_line(ST_ML, gy, st_canvas_w - ST_MR, gy,
+                              fill="#e8e8e8", dash=(3, 4))
+            cv_st.create_text(ST_ML - 5, gy, text=str(yv), anchor="e",
+                              font=("", 9), fill="#888")
+
+        # Axes
+        cv_st.create_line(ST_ML, ST_MT, ST_ML, ST_MT + ST_CH, fill="#bbb", width=1)
+        cv_st.create_line(ST_ML, ST_MT + ST_CH, st_canvas_w - ST_MR, ST_MT + ST_CH, fill="#bbb", width=1)
+
+        # Title + axis label
+        cv_st.create_text((ST_ML + st_canvas_w - ST_MR) / 2, 10,
+                          text="Avg Focus by First Session Start Time",
+                          anchor="n", font=("", 13, "bold"), fill="#333")
+        cv_st.create_text(14, (ST_MT + ST_MT + ST_CH) / 2,
+                          text="Avg focus (0–10)", anchor="center",
+                          font=("", 11), fill="#444", angle=90)
+
+        for i, (group, avg_focus, days) in enumerate(start_data):
+            x0 = ST_ML + 10 + i * (BAR_W + BAR_GAP)
+            x1 = x0 + BAR_W
+            cx = (x0 + x1) / 2
+            bar_top = st_y(avg_focus)
+            color   = BAR_COLORS[i % len(BAR_COLORS)]
+
+            cv_st.create_rectangle(x0, bar_top, x1, ST_MT + ST_CH,
+                                   fill=color, outline="", stipple="")
+            # Value label above bar
+            cv_st.create_text(cx, bar_top - 6, text=f"{avg_focus:.1f}",
+                              anchor="s", font=("", 12, "bold"), fill=color)
+            # Group label below x-axis
+            cv_st.create_text(cx, ST_MT + ST_CH + 6, text=group,
+                              anchor="n", font=("", 11, "bold"), fill="#444")
+            # Day count below group label
+            cv_st.create_text(cx, ST_MT + ST_CH + 26, text=f"({days} day{'s' if days != 1 else ''})",
+                              anchor="n", font=("", 9), fill="#888")
+
     root.mainloop()
 
 

@@ -242,6 +242,60 @@ def get_all_topics() -> list[str]:
     return [row["topic"] for row in rows]
 
 
+def get_daily_focus_vs_time() -> list[sqlite3.Row]:
+    """Returns (day, total_min, avg_focus) per day for days that have focus data."""
+    with _connect() as conn:
+        return conn.execute("""
+            SELECT
+                DATE(timestamp) AS day,
+                SUM(duration) AS total_min,
+                ROUND(SUM(CASE WHEN focus IS NOT NULL THEN focus * duration END) * 1.0 /
+                      NULLIF(SUM(CASE WHEN focus IS NOT NULL THEN duration END), 0), 2) AS avg_focus
+            FROM sessions
+            GROUP BY day
+            HAVING avg_focus IS NOT NULL
+            ORDER BY day ASC
+        """).fetchall()
+
+
+def get_focus_by_start_hour() -> list[sqlite3.Row]:
+    """Returns avg_focus and day count grouped by when the first session of the day started."""
+    with _connect() as conn:
+        return conn.execute("""
+            WITH day_stats AS (
+                SELECT
+                    DATE(timestamp) AS day,
+                    MIN(CAST(strftime('%H', timestamp) AS INTEGER)) AS first_hour,
+                    ROUND(SUM(CASE WHEN focus IS NOT NULL THEN focus * duration END) * 1.0 /
+                          NULLIF(SUM(CASE WHEN focus IS NOT NULL THEN duration END), 0), 2) AS avg_focus
+                FROM sessions
+                GROUP BY day
+                HAVING avg_focus IS NOT NULL
+            )
+            SELECT
+                CASE
+                    WHEN first_hour < 9  THEN 'Before 9am'
+                    WHEN first_hour < 10 THEN '9am \u2013 10am'
+                    ELSE '10am or later'
+                END AS start_group,
+                ROUND(AVG(avg_focus), 2) AS avg_focus,
+                COUNT(*) AS days
+            FROM day_stats
+            GROUP BY
+                CASE
+                    WHEN first_hour < 9  THEN 1
+                    WHEN first_hour < 10 THEN 2
+                    ELSE 3
+                END
+            ORDER BY
+                CASE
+                    WHEN first_hour < 9  THEN 1
+                    WHEN first_hour < 10 THEN 2
+                    ELSE 3
+                END
+        """).fetchall()
+
+
 def get_summary() -> dict:
     with _connect() as conn:
         row = conn.execute("""
