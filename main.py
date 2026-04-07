@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 
 import rumps
 
@@ -70,6 +71,7 @@ class PomodoroApp(rumps.App):
         self._timer_thread: threading.Thread | None = None
         self._done_queue:  queue.Queue[int] = queue.Queue()
         self._start_queue: queue.Queue[int] = queue.Queue()
+        self._session_start_time: datetime | None = None
 
         # Menu items
         self._status_item = rumps.MenuItem("No session running")
@@ -133,6 +135,7 @@ class PomodoroApp(rumps.App):
             duration = self._start_queue.get_nowait()
             self.session_minutes = duration
             self.is_paused = False
+            self._session_start_time = datetime.now()
             self._set_running(True)
             self._timer_thread = threading.Thread(
                 target=self._countdown, args=(self.session_minutes,), daemon=True
@@ -157,6 +160,7 @@ class PomodoroApp(rumps.App):
             self._notify(duration)
             # Run the session form in a background thread so the main thread
             # stays free (session is over so there's nothing else to tick).
+            session_start = self._session_start_time
             def _show_form() -> None:
                 result = _run_window("session_form", duration)
                 if result:
@@ -166,6 +170,7 @@ class PomodoroApp(rumps.App):
                         result.get("topic"),
                         result["distracted"],
                         result.get("reason"),
+                        start_time=session_start,
                     )
             threading.Thread(target=_show_form, daemon=True).start()
 
@@ -242,6 +247,7 @@ class PomodoroApp(rumps.App):
 
         if elapsed_seconds >= 300:   # only log if at least 5 minutes elapsed
             elapsed_minutes = max(1, round(elapsed_seconds / 60))
+            session_start = self._session_start_time
             def _show_form() -> None:
                 result = _run_window("session_form", elapsed_minutes)
                 if result:
@@ -251,6 +257,7 @@ class PomodoroApp(rumps.App):
                         result.get("topic"),
                         result["distracted"],
                         result.get("reason"),
+                        start_time=session_start,
                     )
             threading.Thread(target=_show_form, daemon=True).start()
 

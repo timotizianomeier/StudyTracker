@@ -34,7 +34,7 @@ A macOS menu bar app for tracking focused work sessions. Built with Python, it l
 
 - macOS (tested on macOS 13+)
 - Python 3.10+
-- `rumps` (the only third-party dependency — everything else is in the standard library)
+- `rumps`, `alembic`, `SQLAlchemy` (see `requirements.txt`)
 
 ---
 
@@ -101,6 +101,9 @@ StudyTracker/
 ├── main.py          # rumps menu bar app and timer logic
 ├── db.py            # SQLite setup, writes, and aggregation queries
 ├── forms.py         # All tkinter UI (configure dialog, session form, history window, insights window)
+├── alembic/         # Database migrations (Alembic)
+│   └── versions/    # Migration scripts
+├── alembic.ini      # Alembic configuration
 ├── requirements.txt
 └── README.md
 ```
@@ -114,12 +117,19 @@ Sessions are stored in `~/.pomodoro_tracker.db` with this schema:
 | Column | Type | Description |
 |---|---|---|
 | `id` | INTEGER | Auto-incremented primary key |
+| `start_time` | TEXT | ISO-8601 datetime when the session started |
 | `timestamp` | TEXT | ISO-8601 datetime when the session ended |
 | `duration` | INTEGER | Session length in minutes |
 | `focus` | INTEGER | Focus rating 1–10 (NULL if skipped) |
 | `topic` | TEXT | Optional topic or project label |
 | `distracted` | INTEGER | 1 if distracted, 0 otherwise |
 | `reason` | TEXT | Optional distraction reason |
+
+Schema migrations are managed with [Alembic](https://alembic.sqlalchemy.org/). To apply any pending migrations after pulling:
+
+```bash
+alembic upgrade head
+```
 
 You can query or export the database directly with any SQLite tool (e.g. `sqlite3 ~/.pomodoro_tracker.db`).
 

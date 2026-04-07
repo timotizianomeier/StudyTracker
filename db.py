@@ -2,7 +2,7 @@
 
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DB_PATH = os.path.expanduser("~/.pomodoro_tracker.db")
 
@@ -34,19 +34,24 @@ def save_session(
     topic: str | None,
     distracted: bool,
     reason: str | None,
+    start_time: datetime | None = None,
 ) -> None:
+    end_time = datetime.now()
+    if start_time is None:
+        start_time = end_time - timedelta(minutes=duration)
     with _connect() as conn:
         conn.execute(
             """INSERT INTO sessions
-               (timestamp, duration, focus, topic, distracted, reason)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               (timestamp, duration, focus, topic, distracted, reason, start_time)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
-                datetime.now().isoformat(),
+                end_time.isoformat(),
                 duration,
                 focus,
                 topic or None,
                 1 if distracted else 0,
                 reason or None,
+                start_time.isoformat(),
             ),
         )
 
@@ -78,11 +83,11 @@ def get_stats_by_time_of_day() -> list[sqlite3.Row]:
         return conn.execute("""
             SELECT
                 CASE
-                    WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 7  AND 12
+                    WHEN CAST(strftime('%H', start_time) AS INTEGER) BETWEEN 7  AND 12
                         THEN '🌅 Morning (7–13)'
-                    WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 13 AND 16
+                    WHEN CAST(strftime('%H', start_time) AS INTEGER) BETWEEN 13 AND 16
                         THEN '☀️ Afternoon (13–17)'
-                    WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 17 AND 22
+                    WHEN CAST(strftime('%H', start_time) AS INTEGER) BETWEEN 17 AND 22
                         THEN '🌆 Evening (17–23)'
                     ELSE '🌙 Night (23–7)'
                 END AS period,
@@ -178,7 +183,7 @@ def get_distraction_by_hour() -> list[sqlite3.Row]:
     with _connect() as conn:
         return conn.execute("""
             SELECT
-                CAST(strftime('%H', timestamp) AS INTEGER) AS hour,
+                CAST(strftime('%H', start_time) AS INTEGER) AS hour,
                 COUNT(*)        AS total_sessions,
                 SUM(distracted) AS distracted_sessions
             FROM sessions
@@ -264,8 +269,8 @@ def get_focus_by_start_hour() -> list[sqlite3.Row]:
         return conn.execute("""
             WITH day_stats AS (
                 SELECT
-                    DATE(timestamp) AS day,
-                    MIN(CAST(strftime('%H', timestamp) AS INTEGER)) AS first_hour,
+                    DATE(start_time) AS day,
+                    MIN(CAST(strftime('%H', start_time) AS INTEGER)) AS first_hour,
                     ROUND(SUM(CASE WHEN focus IS NOT NULL THEN focus * duration END) * 1.0 /
                           NULLIF(SUM(CASE WHEN focus IS NOT NULL THEN duration END), 0), 2) AS avg_focus
                 FROM sessions
