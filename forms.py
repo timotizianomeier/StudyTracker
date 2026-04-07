@@ -406,7 +406,7 @@ def show_history_window() -> None:
 
     sessions = db.get_all_sessions()
     for i, row in enumerate(sessions):
-        ts = row["timestamp"]
+        ts = row["start_time"] or row["timestamp"]
         try:
             date_part, time_part = ts[:10], ts[11:16]
         except (IndexError, TypeError):
