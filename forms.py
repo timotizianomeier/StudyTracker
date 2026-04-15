@@ -1360,6 +1360,106 @@ def show_insights_window() -> None:
             cv_st.create_text(cx, ST_MT + ST_CH + 26, text=f"({days} day{'s' if days != 1 else ''})",
                               anchor="n", font=("", 9), fill="#888")
 
+    # ── Tab 7: Focus vs Session Start Time (individual scatter) ──────────────
+    fsct_tab = ttk.Frame(nb, padding=8)
+    nb.add(fsct_tab, text="  Focus vs Start Time  ")
+
+    fsct_rows = db.get_focus_vs_start_time()
+    # Convert to (decimal_hour, focus) pairs
+    fsct_pts: list[tuple[float, int]] = []
+    for r in fsct_rows:
+        st = r["start_time"]
+        if not st:
+            continue
+        try:
+            h = int(st[11:13])
+            m = int(st[14:16])
+            fsct_pts.append((h + m / 60.0, int(r["focus"])))
+        except (IndexError, ValueError):
+            continue
+
+    if len(fsct_pts) < 2:
+        ttk.Label(fsct_tab, text="Not enough data yet (need ≥ 2 sessions with focus scores).",
+                  font=("", 13), foreground="gray").pack(expand=True)
+        ttk.Button(fsct_tab, text="Close", command=root.destroy).pack(side=tk.BOTTOM, anchor=tk.E, pady=4)
+    else:
+        # ── Canvas layout ─────────────────────────────────────────────────────
+        FSCT_ML, FSCT_MR = 60, 30
+        FSCT_MT, FSCT_MB = 50, 60
+        FSCT_CW, FSCT_CH = 820, 340
+        FSCT_W = FSCT_ML + FSCT_CW + FSCT_MR
+        FSCT_H = FSCT_MT + FSCT_CH + FSCT_MB
+
+        all_hours = [p[0] for p in fsct_pts]
+        x_min = max(0.0, min(all_hours) - 0.5)
+        x_max = min(24.0, max(all_hours) + 0.5)
+
+        def fsct_x(h: float) -> float:
+            return FSCT_ML + (h - x_min) / (x_max - x_min) * FSCT_CW
+
+        def fsct_y(v: float) -> float:
+            return FSCT_MT + FSCT_CH - ((v - 1) / 9.0) * FSCT_CH
+
+        fsct_outer = ttk.Frame(fsct_tab)
+        fsct_outer.pack(fill=tk.BOTH, expand=True)
+
+        fsct_btn = ttk.Frame(fsct_tab)
+        fsct_btn.pack(fill=tk.X, pady=(4, 0))
+        ttk.Button(fsct_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
+
+        cv_fsct = tk.Canvas(fsct_outer, bg="white", highlightthickness=0,
+                            width=FSCT_W, height=FSCT_H)
+        cv_fsct.pack(fill=tk.BOTH, expand=True)
+
+        # Title
+        cv_fsct.create_text((FSCT_ML + FSCT_ML + FSCT_CW) / 2, 12,
+                            text="Focus Score vs Session Start Time",
+                            anchor="n", font=("", 13, "bold"), fill="#333")
+
+        # Y-axis grid lines and labels (1–10)
+        for yv in range(1, 11):
+            gy = fsct_y(float(yv))
+            cv_fsct.create_line(FSCT_ML, gy, FSCT_ML + FSCT_CW, gy,
+                                fill="#e8e8e8", dash=(3, 4))
+            cv_fsct.create_text(FSCT_ML - 6, gy, text=str(yv),
+                                anchor="e", font=("", 9), fill="#888")
+
+        # Axes
+        cv_fsct.create_line(FSCT_ML, FSCT_MT, FSCT_ML, FSCT_MT + FSCT_CH,
+                            fill="#bbb", width=1)
+        cv_fsct.create_line(FSCT_ML, FSCT_MT + FSCT_CH,
+                            FSCT_ML + FSCT_CW, FSCT_MT + FSCT_CH,
+                            fill="#bbb", width=1)
+
+        # Y-axis label
+        cv_fsct.create_text(14, FSCT_MT + FSCT_CH / 2,
+                            text="Focus (1–10)", anchor="center",
+                            font=("", 11), fill="#444", angle=90)
+
+        # X-axis tick marks every whole hour visible in range
+        x_tick_start = int(x_min) + (1 if x_min != int(x_min) else 0)
+        for h in range(x_tick_start, int(x_max) + 1):
+            gx = fsct_x(float(h))
+            cv_fsct.create_line(gx, FSCT_MT + FSCT_CH,
+                                gx, FSCT_MT + FSCT_CH + 4, fill="#bbb")
+            label = f"{h:02d}:00"
+            cv_fsct.create_text(gx, FSCT_MT + FSCT_CH + 8,
+                                text=label, anchor="n",
+                                font=("", 9), fill="#666")
+
+        # X-axis label
+        cv_fsct.create_text(FSCT_ML + FSCT_CW / 2, FSCT_MT + FSCT_CH + FSCT_MB - 8,
+                            text="Session start time", anchor="s",
+                            font=("", 11), fill="#444")
+
+        # Scatter dots
+        DOT_R = 5
+        for hv, fv in fsct_pts:
+            cx = fsct_x(hv)
+            cy = fsct_y(float(fv))
+            cv_fsct.create_oval(cx - DOT_R, cy - DOT_R, cx + DOT_R, cy + DOT_R,
+                                fill="#4e79a7", outline="white", width=1)
+
     root.mainloop()
 
 

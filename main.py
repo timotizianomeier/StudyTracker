@@ -72,6 +72,7 @@ class PomodoroApp(rumps.App):
         self._done_queue:  queue.Queue[int] = queue.Queue()
         self._start_queue: queue.Queue[int] = queue.Queue()
         self._session_start_time: datetime | None = None
+        self.sound_on:    bool = True
 
         # Menu items
         self._status_item = rumps.MenuItem("No session running")
@@ -79,6 +80,7 @@ class PomodoroApp(rumps.App):
         self._pause_item  = rumps.MenuItem("⏸  Pause Session")
         self._stop_item   = rumps.MenuItem("⏹  Stop Session")
         self._clock_item  = rumps.MenuItem("✓  Show countdown", callback=self._toggle_clock)
+        self._sound_item  = rumps.MenuItem("✓  Play sound",     callback=self._toggle_sound)
         self._config_item = rumps.MenuItem("⚙  Configure…",     callback=self._configure)
         self._hist_item     = rumps.MenuItem("📋  View History",      callback=self._view_history)
         self._insights_item = rumps.MenuItem("🔍  Insights (Beta)",  callback=self._view_insights)
@@ -100,6 +102,7 @@ class PomodoroApp(rumps.App):
             self._stop_item,
             None,
             self._clock_item,
+            self._sound_item,
             self._config_item,
             self._hist_item,
             self._insights_item,
@@ -177,26 +180,28 @@ class PomodoroApp(rumps.App):
     # ── Notification ──────────────────────────────────────────────────────────
 
     def _notify(self, duration: int) -> None:
-        # Play sound immediately via afplay — works regardless of notification
-        # permissions.  Glass.aiff is a standard macOS system sound.
-        try:
-            subprocess.Popen(["afplay", "/System/Library/Sounds/Glass.aiff"])
-        except Exception:
-            pass
+        if self.sound_on:
+            # Play sound immediately via afplay — works regardless of notification
+            # permissions.  Glass.aiff is a standard macOS system sound.
+            try:
+                subprocess.Popen(["afplay", "/System/Library/Sounds/Glass.aiff"])
+            except Exception:
+                pass
         try:
             rumps.notification(
                 title="🍅 Pomodoro Tracker",
                 subtitle="Session complete!",
                 message=f"Your {duration}-minute session is done — take a break!",
-                sound=True,
+                sound=self.sound_on,
             )
         except Exception:
             try:
+                sound_clause = 'sound name "Glass"' if self.sound_on else ""
                 subprocess.run(
                     ["osascript", "-e",
                      f'display notification "Your {duration}-minute session is done — '
                      f'take a break!" with title "🍅 Pomodoro Tracker" '
-                     f'sound name "Glass"'],
+                     f'{sound_clause}'],
                     check=False, timeout=5,
                 )
             except Exception:
@@ -268,6 +273,12 @@ class PomodoroApp(rumps.App):
         )
         if not self.show_clock and self.is_running:
             self.title = self._ICON_PAUSED if self.is_paused else self._ICON_IDLE
+
+    def _toggle_sound(self, _: rumps.MenuItem) -> None:
+        self.sound_on = not self.sound_on
+        self._sound_item.title = (
+            "✓  Play sound" if self.sound_on else "    Play sound"
+        )
 
     def _configure(self, _: rumps.MenuItem) -> None:
         # Run in a background thread so the menu bar stays responsive.

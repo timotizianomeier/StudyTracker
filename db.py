@@ -301,6 +301,17 @@ def get_focus_by_start_hour() -> list[sqlite3.Row]:
         """).fetchall()
 
 
+def get_focus_vs_start_time() -> list[sqlite3.Row]:
+    """Returns (start_time, focus) for every session that has both values."""
+    with _connect() as conn:
+        return conn.execute("""
+            SELECT start_time, focus
+            FROM sessions
+            WHERE focus IS NOT NULL AND start_time IS NOT NULL
+            ORDER BY start_time ASC
+        """).fetchall()
+
+
 def get_summary() -> dict:
     with _connect() as conn:
         row = conn.execute("""
