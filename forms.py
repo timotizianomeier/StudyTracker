@@ -1452,6 +1452,26 @@ def show_insights_window() -> None:
                             text="Session start time", anchor="s",
                             font=("", 11), fill="#444")
 
+        # Average line: bin by 30-min slots, connect bucket means
+        from collections import defaultdict
+        buckets: dict[int, list[int]] = defaultdict(list)
+        BIN = 0.5  # hours per bucket
+        for hv, fv in fsct_pts:
+            buckets[int(hv / BIN)].append(fv)
+        avg_pts = sorted(
+            ((k * BIN + BIN / 2, sum(v) / len(v)) for k, v in buckets.items()),
+            key=lambda p: p[0]
+        )
+        if len(avg_pts) >= 2:
+            coords = []
+            for hv, av in avg_pts:
+                coords += [fsct_x(hv), fsct_y(av)]
+            cv_fsct.create_line(*coords, fill="#e15759", width=2, smooth=True)
+            for hv, av in avg_pts:
+                mx, my = fsct_x(hv), fsct_y(av)
+                cv_fsct.create_oval(mx - 4, my - 4, mx + 4, my + 4,
+                                    fill="#e15759", outline="white", width=1)
+
         # Scatter dots
         DOT_R = 5
         for hv, fv in fsct_pts:
@@ -1459,6 +1479,14 @@ def show_insights_window() -> None:
             cy = fsct_y(float(fv))
             cv_fsct.create_oval(cx - DOT_R, cy - DOT_R, cx + DOT_R, cy + DOT_R,
                                 fill="#4e79a7", outline="white", width=1)
+
+        # Legend
+        lx, ly = FSCT_ML + FSCT_CW - 160, FSCT_MT + 10
+        cv_fsct.create_oval(lx, ly + 3, lx + 10, ly + 13, fill="#4e79a7", outline="")
+        cv_fsct.create_text(lx + 14, ly + 8, text="Session", anchor="w", font=("", 9), fill="#555")
+        cv_fsct.create_line(lx + 50, ly + 8, lx + 60, ly + 8, fill="#e15759", width=2)
+        cv_fsct.create_oval(lx + 52, ly + 4, lx + 58, ly + 10, fill="#e15759", outline="")
+        cv_fsct.create_text(lx + 64, ly + 8, text="30-min avg", anchor="w", font=("", 9), fill="#555")
 
     root.mainloop()
 

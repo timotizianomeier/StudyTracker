@@ -103,7 +103,6 @@ class PomodoroApp(rumps.App):
             None,
             self._clock_item,
             self._sound_item,
-            self._config_item,
             self._hist_item,
             self._insights_item,
             self._meditate_item,
