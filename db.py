@@ -23,7 +23,8 @@ def init_db() -> None:
                 focus      INTEGER,
                 topic      TEXT,
                 distracted INTEGER NOT NULL DEFAULT 0,
-                reason     TEXT
+                reason     TEXT,
+                start_time TEXT
             )
         """)
 
