@@ -229,7 +229,10 @@ def show_session_form(duration_minutes: int) -> dict | None:
     ttk.Label(tips, text="10 – perfect", foreground="gray", font=("", 10)).pack(side=tk.RIGHT)
 
     # ── Topic ─────────────────────────────────────────────────────────────────
-    topic_lf = ttk.LabelFrame(frame, text="  Topic / Project (optional)  ", padding=12)
+    topic_lf = ttk.LabelFrame(frame, text="  Topic / Project  ", padding=12)
+
+    error_lbl = ttk.Label(frame, text="⚠  Please enter a topic before saving.", foreground="red", font=("", 11))
+
     topic_lf.pack(fill=tk.X, pady=(0, 12))
 
     topic_var = tk.StringVar()
@@ -243,6 +246,8 @@ def show_session_form(duration_minutes: int) -> dict | None:
                 b.config(bg="#0055cc", fg="#ffffff")
             else:
                 b.config(bg="#aaaaaa", fg="#000000")
+        if current.strip():
+            error_lbl.pack_forget()
 
     if existing_topics:
         chips_outer = ttk.Frame(topic_lf)
@@ -273,7 +278,6 @@ def show_session_form(duration_minutes: int) -> dict | None:
                 _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
                 chip_btns[_topic] = _btn
 
-        topic_var.trace_add("write", _on_topic_var_changed)
         ttk.Label(topic_lf, text="Or add a new one:", foreground="gray", font=("", 10)).pack(anchor=tk.W)
     else:
         ttk.Label(
@@ -282,6 +286,7 @@ def show_session_form(duration_minutes: int) -> dict | None:
             foreground="gray", font=("", 10),
         ).pack(anchor=tk.W, pady=(0, 4))
     ttk.Entry(topic_lf, textvariable=topic_var, font=("", 13)).pack(fill=tk.X)
+    topic_var.trace_add("write", _on_topic_var_changed)
 
     # ── Distraction ───────────────────────────────────────────────────────────
     distract_lf = ttk.LabelFrame(frame, text="  Distractions  ", padding=12)
@@ -321,9 +326,16 @@ def show_session_form(duration_minutes: int) -> dict | None:
     btn_frame.pack(fill=tk.X, pady=(16, 0))
 
     def _submit() -> None:
+        topic = topic_var.get().strip()
+        if not topic:
+            error_lbl.pack(before=btn_frame, pady=(0, 6))
+            root.update_idletasks()
+            root.geometry(f"460x{root.winfo_reqheight()}")
+            _center_window(root)
+            return
         result[0] = {
             "focus": max(1, min(10, int(float(focus_var.get())))),
-            "topic": topic_var.get().strip() or None,
+            "topic": topic,
             "distracted": distracted_var.get(),
             "reason": (
                 reason_text.get("1.0", tk.END).strip() or None
