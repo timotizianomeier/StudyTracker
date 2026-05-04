@@ -52,6 +52,13 @@ def main() -> None:
         if result is not None:
             print(json.dumps(result), flush=True)
 
+    elif window == "screen_lock_dialog":
+        elapsed = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+        from forms import show_screen_lock_dialog
+        result = show_screen_lock_dialog(elapsed)
+        if result is not None:
+            print(json.dumps(result), flush=True)
+
     elif window == "session_form":
         duration = int(sys.argv[2])
         from forms import show_session_form

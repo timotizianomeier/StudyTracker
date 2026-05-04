@@ -74,6 +74,15 @@ class PomodoroApp(rumps.App):
         self._session_start_time: datetime | None = None
         self.sound_on:    bool = True
 
+        # Screen-lock state
+        self._lock_time: datetime | None = None
+        self._time_remaining_at_lock: int = 0
+        self._was_running_at_lock: bool = False
+        self._was_paused_at_lock: bool = False
+        self._time_adjustment: int = 0          # applied by countdown thread
+        self._unlock_result_queue: queue.Queue = queue.Queue()
+        self._screen_observers: list = []       # keep refs alive (prevent GC)
+
         # Menu items
         self._status_item = rumps.MenuItem("No session running")
         self._start_item  = rumps.MenuItem("▶  Start Session",  callback=self._start_session)
@@ -114,6 +123,7 @@ class PomodoroApp(rumps.App):
         self._tick.start()
 
         db.init_db()
+        self._setup_screen_lock_detection()
 
     # ── Internal timer ────────────────────────────────────────────────────────
 
@@ -123,7 +133,14 @@ class PomodoroApp(rumps.App):
         self.time_remaining = remaining
         while remaining > 0 and self.is_running:
             time.sleep(1)
-            if self.is_running and not self.is_paused:
+            # Apply any pending time adjustment (e.g. from screen-lock handling).
+            # Checked before decrement so it takes effect before the next tick.
+            adj = self._time_adjustment
+            if adj:
+                remaining = max(0, remaining + adj)
+                self._time_adjustment = 0
+                self.time_remaining = remaining
+            if remaining > 0 and self.is_running and not self.is_paused:
                 remaining -= 1
                 self.time_remaining = remaining
         if self.is_running:
@@ -132,6 +149,19 @@ class PomodoroApp(rumps.App):
 
     def _on_tick(self, _: rumps.Timer) -> None:
         """Main-thread poll: refresh title and handle session start/completion."""
+        # Handle unlock-dialog result (answered after screen-lock)
+        if not self._unlock_result_queue.empty():
+            item = self._unlock_result_queue.get_nowait()
+            if self.is_running:
+                result, was_paused_before, elapsed = item
+                if result and not result.get("break"):
+                    # User kept studying — deduct locked time from remaining
+                    self._time_adjustment = -elapsed
+                # Restore pause state to what it was before auto-pause on lock
+                self.is_paused = was_paused_before
+                if not was_paused_before:
+                    self._pause_item.title = "⏸  Pause Session"
+
         # Handle a pending start request (duration chosen in the picker window)
         if not self.is_running and not self._start_queue.empty():
             duration = self._start_queue.get_nowait()
@@ -157,6 +187,8 @@ class PomodoroApp(rumps.App):
         if not self._done_queue.empty():
             duration = self._done_queue.get_nowait()
             self.is_paused = False
+            self._was_running_at_lock = False  # cancel any pending lock dialog
+            self._lock_time = None
             self.title = self._ICON_IDLE
             self._set_running(False)
             self._notify(duration)
@@ -206,6 +238,50 @@ class PomodoroApp(rumps.App):
             except Exception:
                 pass
 
+    # ── Screen-lock detection ─────────────────────────────────────────────────
+
+    def _setup_screen_lock_detection(self) -> None:
+        try:
+            from Foundation import NSDistributedNotificationCenter, NSOperationQueue
+            center = NSDistributedNotificationCenter.defaultCenter()
+            token_lock = center.addObserverForName_object_queue_usingBlock_(
+                "com.apple.screenIsLocked", None, NSOperationQueue.mainQueue(),
+                lambda _n: self._on_screen_locked(),
+            )
+            token_unlock = center.addObserverForName_object_queue_usingBlock_(
+                "com.apple.screenIsUnlocked", None, NSOperationQueue.mainQueue(),
+                lambda _n: self._on_screen_unlocked(),
+            )
+            self._screen_observers = [token_lock, token_unlock]
+        except Exception:
+            pass  # PyObjC unavailable; screen-lock feature disabled
+
+    def _on_screen_locked(self) -> None:
+        if not self.is_running:
+            return
+        self._was_running_at_lock = True
+        self._lock_time = datetime.now()
+        self._time_remaining_at_lock = self.time_remaining
+        self._was_paused_at_lock = self.is_paused
+        if not self.is_paused:
+            self.is_paused = True
+
+    def _on_screen_unlocked(self) -> None:
+        if not self._was_running_at_lock or self._lock_time is None:
+            return
+        lock_time = self._lock_time
+        was_paused = self._was_paused_at_lock
+        self._lock_time = None
+        self._was_running_at_lock = False
+
+        elapsed = int((datetime.now() - lock_time).total_seconds())
+
+        def _ask() -> None:
+            result = _run_window("screen_lock_dialog", elapsed)
+            self._unlock_result_queue.put((result, was_paused, elapsed))
+
+        threading.Thread(target=_ask, daemon=True).start()
+
     # ── Menu state helpers ────────────────────────────────────────────────────
 
     def _set_running(self, running: bool) -> None:
@@ -246,6 +322,8 @@ class PomodoroApp(rumps.App):
         elapsed_seconds = self.session_minutes * 60 - self.time_remaining
         self.is_running = False
         self.is_paused = False
+        self._was_running_at_lock = False  # cancel any pending lock dialog
+        self._lock_time = None
         self.title = self._ICON_IDLE
         self._set_running(False)
 
