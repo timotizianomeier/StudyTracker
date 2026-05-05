@@ -82,6 +82,11 @@ class PomodoroApp(rumps.App):
         self._time_adjustment: int = 0          # applied by countdown thread
         self._unlock_result_queue: queue.Queue = queue.Queue()
         self._screen_observers: list = []       # keep refs alive (prevent GC)
+        # True while waiting for the user to answer the unlock popup; gates
+        # normal session-complete handling so it doesn't race the popup.
+        self._defer_until_unlock: bool = False
+        self._session_finished_while_locked: bool = False
+        self._finished_duration: int = 0
 
         # Menu items
         self._status_item = rumps.MenuItem("No session running")
@@ -127,9 +132,9 @@ class PomodoroApp(rumps.App):
 
     # ── Internal timer ────────────────────────────────────────────────────────
 
-    def _countdown(self, minutes: int) -> None:
+    def _countdown(self, seconds: int) -> None:
         """Background thread: counts down (skipping ticks while paused)."""
-        remaining = minutes * 60
+        remaining = seconds
         self.time_remaining = remaining
         while remaining > 0 and self.is_running:
             time.sleep(1)
@@ -145,22 +150,61 @@ class PomodoroApp(rumps.App):
                 self.time_remaining = remaining
         if self.is_running:
             self.is_running = False
-            self._done_queue.put(minutes)
+            self._done_queue.put(self.session_minutes)
 
     def _on_tick(self, _: rumps.Timer) -> None:
         """Main-thread poll: refresh title and handle session start/completion."""
         # Handle unlock-dialog result (answered after screen-lock)
         if not self._unlock_result_queue.empty():
             item = self._unlock_result_queue.get_nowait()
-            if self.is_running:
-                result, was_paused_before, elapsed = item
-                if result and not result.get("break"):
-                    # User kept studying — deduct locked time from remaining
-                    self._time_adjustment = -elapsed
-                # Restore pause state to what it was before auto-pause on lock
-                self.is_paused = was_paused_before
-                if not was_paused_before:
-                    self._pause_item.title = "⏸  Pause Session"
+            result, elapsed = item
+            took_break = not result or result.get("break", True)
+            self._defer_until_unlock = False
+
+            if not took_break:
+                # User kept working through the lock period
+                if self._session_finished_while_locked:
+                    # Session already completed while locked — finalise it now
+                    self._session_finished_while_locked = False
+                    finished_dur = self._finished_duration
+                    self._finished_duration = 0
+                    self.is_paused = False
+                    self.title = self._ICON_IDLE
+                    self._set_running(False)
+                    session_start = self._session_start_time
+                    def _show_form_kept(d=finished_dur, ss=session_start) -> None:
+                        form_result = _run_window("session_form", d)
+                        if form_result:
+                            db.save_session(
+                                d,
+                                form_result["focus"],
+                                form_result.get("topic"),
+                                form_result["distracted"],
+                                form_result.get("reason"),
+                                start_time=ss,
+                            )
+                    threading.Thread(target=_show_form_kept, daemon=True).start()
+                # else: timer still running — it kept counting, just continue
+            else:
+                # User was on a break — restore timer to the moment they left
+                if self._session_finished_while_locked:
+                    # Session completed while they were away — restart from lock time
+                    self._session_finished_while_locked = False
+                    self._finished_duration = 0
+                    self.is_running = True
+                    self._set_running(True)
+                    self.is_paused = False
+                    self._timer_thread = threading.Thread(
+                        target=self._countdown,
+                        args=(self._time_remaining_at_lock,),
+                        daemon=True,
+                    )
+                    self._timer_thread.start()
+                else:
+                    # Timer still running — wind time back to when screen locked
+                    self._time_adjustment = (
+                        self._time_remaining_at_lock - self.time_remaining
+                    )
 
         # Handle a pending start request (duration chosen in the picker window)
         if not self.is_running and not self._start_queue.empty():
@@ -170,7 +214,7 @@ class PomodoroApp(rumps.App):
             self._session_start_time = datetime.now()
             self._set_running(True)
             self._timer_thread = threading.Thread(
-                target=self._countdown, args=(self.session_minutes,), daemon=True
+                target=self._countdown, args=(self.session_minutes * 60,), daemon=True
             )
             self._timer_thread.start()
 
@@ -186,27 +230,33 @@ class PomodoroApp(rumps.App):
 
         if not self._done_queue.empty():
             duration = self._done_queue.get_nowait()
-            self.is_paused = False
-            self._was_running_at_lock = False  # cancel any pending lock dialog
-            self._lock_time = None
-            self.title = self._ICON_IDLE
-            self._set_running(False)
-            self._notify(duration)
-            # Run the session form in a background thread so the main thread
-            # stays free (session is over so there's nothing else to tick).
-            session_start = self._session_start_time
-            def _show_form() -> None:
-                result = _run_window("session_form", duration)
-                if result:
-                    db.save_session(
-                        duration,
-                        result["focus"],
-                        result.get("topic"),
-                        result["distracted"],
-                        result.get("reason"),
-                        start_time=session_start,
-                    )
-            threading.Thread(target=_show_form, daemon=True).start()
+            if self._defer_until_unlock:
+                # Timer finished while screen was locked — fire notification but
+                # hold the session form until the user answers the unlock popup.
+                self._session_finished_while_locked = True
+                self._finished_duration = duration
+                self._notify(duration)
+            else:
+                self.is_paused = False
+                self._lock_time = None
+                self.title = self._ICON_IDLE
+                self._set_running(False)
+                self._notify(duration)
+                # Run the session form in a background thread so the main thread
+                # stays free (session is over so there's nothing else to tick).
+                session_start = self._session_start_time
+                def _show_form() -> None:
+                    result = _run_window("session_form", duration)
+                    if result:
+                        db.save_session(
+                            duration,
+                            result["focus"],
+                            result.get("topic"),
+                            result["distracted"],
+                            result.get("reason"),
+                            start_time=session_start,
+                        )
+                threading.Thread(target=_show_form, daemon=True).start()
 
     # ── Notification ──────────────────────────────────────────────────────────
 
@@ -259,18 +309,22 @@ class PomodoroApp(rumps.App):
     def _on_screen_locked(self) -> None:
         if not self.is_running:
             return
-        self._was_running_at_lock = True
         self._lock_time = datetime.now()
         self._time_remaining_at_lock = self.time_remaining
         self._was_paused_at_lock = self.is_paused
-        if not self.is_paused:
-            self.is_paused = True
+        if self.is_paused:
+            # Already paused — no popup needed on unlock, timer stays paused
+            self._was_running_at_lock = False
+        else:
+            # Actively running — let timer keep counting, show popup on unlock
+            self._was_running_at_lock = True
+            self._defer_until_unlock = True
 
     def _on_screen_unlocked(self) -> None:
         if not self._was_running_at_lock or self._lock_time is None:
+            # Was already paused at lock (or not running) — nothing to do
             return
         lock_time = self._lock_time
-        was_paused = self._was_paused_at_lock
         self._lock_time = None
         self._was_running_at_lock = False
 
@@ -278,7 +332,7 @@ class PomodoroApp(rumps.App):
 
         def _ask() -> None:
             result = _run_window("screen_lock_dialog", elapsed)
-            self._unlock_result_queue.put((result, was_paused, elapsed))
+            self._unlock_result_queue.put((result, elapsed))
 
         threading.Thread(target=_ask, daemon=True).start()
 
@@ -322,7 +376,10 @@ class PomodoroApp(rumps.App):
         elapsed_seconds = self.session_minutes * 60 - self.time_remaining
         self.is_running = False
         self.is_paused = False
-        self._was_running_at_lock = False  # cancel any pending lock dialog
+        self._was_running_at_lock = False
+        self._defer_until_unlock = False
+        self._session_finished_while_locked = False
+        self._finished_duration = 0
         self._lock_time = None
         self.title = self._ICON_IDLE
         self._set_running(False)
