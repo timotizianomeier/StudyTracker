@@ -173,6 +173,69 @@ def show_configure_window(current_minutes: int) -> int | None:
     return result[0]
 
 
+# ─── Screen-lock return dialog ────────────────────────────────────────────────
+
+def show_screen_lock_dialog(elapsed_seconds: int) -> dict | None:
+    """
+    Shown after the screen unlocks during an active session.
+    Returns {"break": True} if the user was resting, {"break": False} if studying.
+    Defaults to "break" when the window is closed without answering.
+    """
+    mins, secs = divmod(elapsed_seconds, 60)
+    if mins and secs:
+        duration_str = f"{mins} min {secs} sec"
+    elif mins:
+        duration_str = f"{mins} min"
+    else:
+        duration_str = f"{secs} sec"
+
+    result: list[dict | None] = [{"break": True}]  # safe default
+
+    root = tk.Tk()
+    root.withdraw()
+    root.title("Welcome back!")
+    root.geometry("400x180")
+    root.resizable(False, False)
+    _theme(root)
+    _bring_to_front(root)
+
+    frame = ttk.Frame(root, padding=24)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    ttk.Label(frame, text="Welcome back!", font=("", 15, "bold")).pack(pady=(0, 8))
+    ttk.Label(
+        frame,
+        text=f"Screen was locked for {duration_str}.\nWere you on a break?",
+        font=("", 12),
+        justify=tk.CENTER,
+    ).pack(pady=(0, 18))
+
+    def _was_break() -> None:
+        result[0] = {"break": True}
+        root.quit()
+
+    def _kept_studying() -> None:
+        result[0] = {"break": False}
+        root.quit()
+
+    btn_frame = ttk.Frame(frame)
+    btn_frame.pack()
+    ttk.Button(btn_frame, text="Yes, I was on a break", command=_was_break).pack(
+        side=tk.LEFT, padx=6
+    )
+    ttk.Button(btn_frame, text="No, I kept studying", command=_kept_studying).pack(
+        side=tk.LEFT, padx=6
+    )
+
+    root.protocol("WM_DELETE_WINDOW", _was_break)
+    root.bind("<Return>", lambda _: _was_break())
+    root.bind("<Escape>", lambda _: _was_break())
+
+    root.mainloop()
+    root.destroy()
+    return result[0]
+
+
 # ─── Post-session feedback form ───────────────────────────────────────────────
 
 def show_session_form(duration_minutes: int) -> dict | None:
