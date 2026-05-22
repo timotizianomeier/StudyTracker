@@ -509,10 +509,13 @@ def show_history_window() -> None:
     has_untagged = db.has_untagged_sessions()
     term_options = ["All Terms"] + all_terms + (["Untagged"] if has_untagged else [])
 
+    last_term    = db.get_last_term()
+    default_term = last_term if last_term in term_options else "All Terms"
+
     hdr = ttk.Frame(root, padding=(10, 8, 10, 4))
     hdr.pack(fill=tk.X)
     ttk.Label(hdr, text="Term:", font=("", 12, "bold")).pack(side=tk.LEFT, padx=(0, 8))
-    term_var = tk.StringVar(value="All Terms")
+    term_var = tk.StringVar(value=default_term)
     ttk.Combobox(
         hdr, textvariable=term_var, values=term_options,
         state="readonly", width=24, font=("", 12),
@@ -813,10 +816,13 @@ def show_insights_window() -> None:
     has_untagged = db.has_untagged_sessions()
     term_options = ["All Terms"] + all_terms + (["Untagged"] if has_untagged else [])
 
+    last_term    = db.get_last_term()
+    default_term = last_term if last_term in term_options else "All Terms"
+
     hdr = ttk.Frame(root, padding=(10, 8, 10, 4))
     hdr.pack(fill=tk.X)
     ttk.Label(hdr, text="Term:", font=("", 12, "bold")).pack(side=tk.LEFT, padx=(0, 8))
-    term_var = tk.StringVar(value="All Terms")
+    term_var = tk.StringVar(value=default_term)
     ttk.Combobox(
         hdr, textvariable=term_var, values=term_options,
         state="readonly", width=24, font=("", 12),
