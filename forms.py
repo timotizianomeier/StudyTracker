@@ -1731,76 +1731,48 @@ def show_grounding_exercise() -> None:
 
     Grounding brings attention back to the present moment via the five senses.
     The technique is widely used in CBT and trauma-informed care to interrupt
-    anxiety or dissociation.  Each step shows an emoji cue and numbered entry
-    fields to write down what you notice.
+    anxiety or dissociation.  Each step shows an emoji cue and instruction text.
     """
     STEPS = [
-        (5, "👁️",  "5 things you can SEE",
+        ("👁️",  "5 things you can SEE",
          "Look around and name 5 things you can see right now."),
-        (4, "🖐️",  "4 things you can TOUCH",
+        ("🖐️",  "4 things you can TOUCH",
          "Notice 4 things you can physically feel — textures, temperature, weight."),
-        (3, "👂",  "3 things you can HEAR",
+        ("👂",  "3 things you can HEAR",
          "Listen carefully and identify 3 distinct sounds around you."),
-        (2, "👃",  "2 things you can SMELL",
+        ("👃",  "2 things you can SMELL",
          "Take a slow breath and notice 2 things you can smell."),
-        (1, "👅",  "1 thing you can TASTE",
+        ("👅",  "1 thing you can TASTE",
          "Focus inward — what is one thing you can taste right now?"),
     ]
 
     root = tk.Tk()
     root.withdraw()
     root.title("5-4-3-2-1 Grounding")
-    root.geometry("430x530")
+    root.geometry("380x340")
     root.resizable(False, False)
     _theme(root)
     _bring_to_front(root)
 
     step = [0]
 
-    # ── Header ────────────────────────────────────────────────────────────
-    header = ttk.Frame(root, padding=(24, 16, 24, 0))
-    header.pack(fill=tk.X)
+    # ── Content ───────────────────────────────────────────────────────────
+    content = ttk.Frame(root, padding=(24, 24, 24, 8))
+    content.pack(fill=tk.BOTH, expand=True)
 
-    step_lbl = ttk.Label(header, text="Step 1 of 5",
-                          font=("", 11), foreground="gray")
+    step_lbl = ttk.Label(content, text="Step 1 of 5",
+                          font=("", FS_XS), foreground=C_MUTED)
     step_lbl.pack()
 
-    # tk.Label for emoji so we can control bg colour precisely
-    emoji_lbl = tk.Label(header, text=STEPS[0][1], font=("", 60))
-    emoji_lbl.pack(pady=(2, 0))
+    emoji_lbl = tk.Label(content, text=STEPS[0][0], font=("", 72))
+    emoji_lbl.pack(pady=(8, 4))
 
-    title_lbl = ttk.Label(header, text=STEPS[0][2], font=("", 14, "bold"))
-    title_lbl.pack(pady=(4, 2))
+    title_lbl = ttk.Label(content, text=STEPS[0][1], font=("", FS_MD, "bold"))
+    title_lbl.pack(pady=(0, 8))
 
-    instr_lbl = ttk.Label(header, text=STEPS[0][3], font=("", 12),
-                           foreground="gray", wraplength=370, justify="center")
-    instr_lbl.pack(pady=(0, 10))
-
-    sep = ttk.Separator(root, orient="horizontal")
-    sep.pack(fill=tk.X, padx=24)
-
-    # ── Entry fields (rebuilt for each step) ─────────────────────────────
-    entries_pane = ttk.Frame(root, padding=(32, 10, 32, 4))
-    entries_pane.pack(fill=tk.X)
-
-    def _build_entries(n: int) -> None:
-        for w in entries_pane.winfo_children():
-            w.destroy()
-        for i in range(n):
-            row = ttk.Frame(entries_pane)
-            row.pack(fill=tk.X, pady=4)
-            ttk.Label(row, text=f"{i + 1}.", width=3, font=("", 13)).pack(side=tk.LEFT)
-            e = ttk.Entry(row, font=("", 13))
-            e.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        # Focus the first entry automatically
-        rows = entries_pane.winfo_children()
-        if rows:
-            for w in rows[0].winfo_children():
-                if isinstance(w, ttk.Entry):
-                    w.focus_set()
-                    break
-
-    _build_entries(STEPS[0][0])
+    instr_lbl = ttk.Label(content, text=STEPS[0][2], font=("", FS_SM),
+                           foreground=C_MUTED, wraplength=320, justify="center")
+    instr_lbl.pack()
 
     # ── Footer ────────────────────────────────────────────────────────────
     footer = ttk.Frame(root, padding=(24, 8, 24, 18))
@@ -1814,9 +1786,7 @@ def show_grounding_exercise() -> None:
         step[0] += 1
         if step[0] >= len(STEPS):
             # ── Completion screen ─────────────────────────────────────────
-            header.pack_forget()
-            entries_pane.pack_forget()
-            sep.pack_forget()
+            content.pack_forget()
             done = ttk.Frame(root, padding=36)
             done.pack(expand=True)
             ttk.Label(done, text="🎉", font=("", 64)).pack()
@@ -1824,18 +1794,17 @@ def show_grounding_exercise() -> None:
             ttk.Label(done,
                        text="You've completed the 5-4-3-2-1 grounding exercise.\n"
                             "Take a moment to notice how you feel.",
-                       font=("", 12), foreground="gray",
-                       justify="center", wraplength=340).pack(pady=(0, 4))
+                       font=("", FS_SM), foreground=C_MUTED,
+                       justify="center", wraplength=300).pack(pady=(0, 4))
             next_var.set("Close")
             next_btn.config(command=root.destroy)
             return
 
-        n, emoji, title, instr = STEPS[step[0]]
+        emoji, title, instr = STEPS[step[0]]
         step_lbl.config(text=f"Step {step[0] + 1} of {len(STEPS)}")
         emoji_lbl.config(text=emoji)
         title_lbl.config(text=title)
         instr_lbl.config(text=instr)
-        _build_entries(n)
 
         if step[0] == len(STEPS) - 1:
             next_var.set("Finish ✓")
