@@ -9,6 +9,24 @@ from tkinter import ttk
 import db
 
 
+# ─── Design tokens ────────────────────────────────────────────────────────────
+
+C_PRIMARY       = "#c0392b"   # tomato red — selected state, primary actions
+C_CHIP_SEL_BG   = "#c0392b"
+C_CHIP_SEL_FG   = "#ffffff"
+C_CHIP_UNSEL_BG = "#eeeeee"
+C_CHIP_UNSEL_FG = "#555555"
+C_MUTED         = "#888888"
+C_DIVIDER       = "#e0e0e0"
+C_ROW_EVEN      = "#f8f8f8"
+C_ROW_ODD       = "#ffffff"
+
+FS_XS = 10   # captions / hints
+FS_SM = 12   # body
+FS_MD = 15   # section headers / window titles
+FS_LG = 24   # large numbers (focus rating, duration picker)
+
+
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _center_window(root: tk.Tk) -> None:
@@ -54,6 +72,24 @@ def _theme(root: tk.Tk) -> ttk.Style:
     return style
 
 
+def _section_header(parent: ttk.Frame, text: str) -> ttk.Frame:
+    """Render a small-caps section label with a hairline separator to its right."""
+    hdr = ttk.Frame(parent)
+    hdr.pack(fill=tk.X, pady=(14, 3))
+    ttk.Label(hdr, text=text.upper(), font=("", FS_XS, "bold"), foreground=C_MUTED).pack(side=tk.LEFT)
+    ttk.Separator(hdr, orient="horizontal").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
+    return hdr
+
+
+def _focus_descriptor(val: int) -> str:
+    if val <= 2: return "Terrible"
+    if val <= 4: return "Poor"
+    if val == 5: return "Fair"
+    if val <= 7: return "Good"
+    if val == 8: return "Great"
+    return "Excellent"
+
+
 # ─── Shared: duration-picker widget builder ───────────────────────────────────
 
 def _build_duration_picker(
@@ -66,11 +102,11 @@ def _build_duration_picker(
     Add a session-length label, value display, and slider to *frame*.
     Returns the DoubleVar that holds the chosen value.
     """
-    ttk.Label(frame, text="Session length", font=("", 13)).pack()
+    ttk.Label(frame, text="Session length", font=("", FS_SM)).pack()
 
     clamped  = max(_min, min(_max, current_minutes))
     dur_var  = tk.DoubleVar(value=float(clamped))
-    val_label = ttk.Label(frame, text=f"{clamped} min", font=("", 26, "bold"))
+    val_label = ttk.Label(frame, text=f"{clamped} min", font=("", FS_LG, "bold"))
     val_label.pack(pady=(4, 10))
 
     def _on_slider(val: str) -> None:
@@ -78,12 +114,12 @@ def _build_duration_picker(
 
     slider_row = ttk.Frame(frame)
     slider_row.pack(fill=tk.X, pady=(0, 6))
-    ttk.Label(slider_row, text=str(_min), foreground="gray").pack(side=tk.LEFT)
+    ttk.Label(slider_row, text=str(_min), foreground=C_MUTED).pack(side=tk.LEFT)
     ttk.Scale(
         slider_row, from_=_min, to=_max, orient=tk.HORIZONTAL,
         variable=dur_var, command=_on_slider, length=240,
     ).pack(side=tk.LEFT, padx=8, expand=True, fill=tk.X)
-    ttk.Label(slider_row, text=str(_max), foreground="gray").pack(side=tk.LEFT)
+    ttk.Label(slider_row, text=str(_max), foreground=C_MUTED).pack(side=tk.LEFT)
     return dur_var
 
 
@@ -202,11 +238,11 @@ def show_screen_lock_dialog(elapsed_seconds: int) -> dict | None:
     frame = ttk.Frame(root, padding=24)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    ttk.Label(frame, text="Welcome back!", font=("", 15, "bold")).pack(pady=(0, 8))
+    ttk.Label(frame, text="Welcome back!", font=("", FS_MD, "bold")).pack(pady=(0, 8))
     ttk.Label(
         frame,
         text=f"Screen was locked for {duration_str}.\nWere you on a break?",
-        font=("", 12),
+        font=("", FS_SM),
         justify=tk.CENTER,
     ).pack(pady=(0, 18))
 
@@ -255,20 +291,19 @@ def show_session_form(duration_minutes: int) -> dict | None:
     frame.pack(fill=tk.BOTH, expand=True)
 
     # ── Header ────────────────────────────────────────────────────────────────
-    ttk.Label(frame, text="🍅  Session Complete!", font=("", 17, "bold")).pack(pady=(0, 4))
+    ttk.Label(frame, text="🍅  Session Complete!", font=("", FS_MD, "bold")).pack(pady=(0, 4))
     ttk.Label(
         frame,
         text=f"Duration: {duration_minutes} min",
-        foreground="gray",
-        font=("", 12),
-    ).pack(pady=(0, 18))
+        foreground=C_MUTED,
+        font=("", FS_SM),
+    ).pack(pady=(0, 4))
 
     # ── Term ──────────────────────────────────────────────────────────────────
-    term_lf = ttk.LabelFrame(frame, text="  Term  ", padding=12)
-    term_lf.pack(fill=tk.X, pady=(0, 12))
+    term_sec_hdr = _section_header(frame, "Term")
 
     term_error_lbl = ttk.Label(
-        frame, text="⚠  Please enter a term before saving.", foreground="red", font=("", 11)
+        frame, text="⚠  Please enter a term before saving.", foreground="red", font=("", FS_SM)
     )
 
     existing_terms = db.get_all_terms()
@@ -276,24 +311,27 @@ def show_session_form(duration_minutes: int) -> dict | None:
     term_var       = tk.StringVar(value=last_term or "")
     term_chip_btns: dict[str, tk.Button] = {}
 
+    term_frame = ttk.Frame(frame)
+    term_frame.pack(fill=tk.X, pady=(0, 4))
+
     def _on_term_changed(*_: object) -> None:
         cur = term_var.get()
         for t, b in term_chip_btns.items():
             b.config(
-                bg="#0055cc" if cur == t else "#aaaaaa",
-                fg="#ffffff" if cur == t else "#000000",
+                bg=C_CHIP_SEL_BG   if cur == t else C_CHIP_UNSEL_BG,
+                fg=C_CHIP_SEL_FG   if cur == t else C_CHIP_UNSEL_FG,
             )
         if cur.strip():
             term_error_lbl.pack_forget()
 
     if existing_terms:
-        tc_outer = ttk.Frame(term_lf)
+        tc_outer = ttk.Frame(term_frame)
         tc_outer.pack(fill=tk.X, pady=(0, 8))
         TERM_AVAIL_W = 360
         rows_of_terms: list[list[str]] = [[]]
         row_w = 0
         for _t in existing_terms:
-            _bw = len(_t) * 7 + 28
+            _bw = len(_t) * 7 + 36
             if row_w > 0 and row_w + _bw > TERM_AVAIL_W:
                 rows_of_terms.append([])
                 row_w = 0
@@ -305,27 +343,28 @@ def show_session_form(duration_minutes: int) -> dict | None:
             for _term_name in _row_terms:
                 _btn = tk.Button(
                     _rf, text=_term_name, relief="flat",
-                    bg="#aaaaaa", fg="#000000",
-                    font=("", 11), padx=10, pady=4, cursor="hand2", bd=0,
+                    bg=C_CHIP_UNSEL_BG, fg=C_CHIP_UNSEL_FG,
+                    font=("", FS_SM), padx=14, pady=6, cursor="hand2", bd=0,
                     command=lambda t=_term_name: term_var.set(t),
                 )
                 _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
                 term_chip_btns[_term_name] = _btn
-        ttk.Label(term_lf, text="Or add a new term:", foreground="gray", font=("", 10)).pack(anchor=tk.W)
+        ttk.Label(term_frame, text="Or add a new term:", foreground=C_MUTED, font=("", FS_XS)).pack(anchor=tk.W)
     else:
         ttk.Label(
-            term_lf,
+            term_frame,
             text="e.g.  Spring 2025 · Autumn 2025 · Summer",
-            foreground="gray", font=("", 10),
+            foreground=C_MUTED, font=("", FS_XS),
         ).pack(anchor=tk.W, pady=(0, 4))
-    ttk.Entry(term_lf, textvariable=term_var, font=("", 13)).pack(fill=tk.X)
+    ttk.Entry(term_frame, textvariable=term_var, font=("", FS_SM)).pack(fill=tk.X)
     term_var.trace_add("write", _on_term_changed)
     if last_term and last_term in term_chip_btns:
-        term_chip_btns[last_term].config(bg="#0055cc", fg="#ffffff")
+        term_chip_btns[last_term].config(bg=C_CHIP_SEL_BG, fg=C_CHIP_SEL_FG)
 
     # ── Focus rating ──────────────────────────────────────────────────────────
-    focus_lf = ttk.LabelFrame(frame, text="  Focus Rating  ", padding=12)
-    focus_lf.pack(fill=tk.X, pady=(0, 12))
+    focus_sec_hdr = _section_header(frame, "Focus Rating")
+    focus_frame = ttk.Frame(frame)
+    focus_frame.pack(fill=tk.X, pady=(0, 4))
 
     _summary = db.get_summary()
     _avg = _summary.get("avg_focus")
@@ -334,29 +373,36 @@ def show_session_form(duration_minutes: int) -> dict | None:
     focus_var = tk.DoubleVar(value=default_focus)
 
     rating_lbl = ttk.Label(
-        focus_lf, text=str(int(default_focus)), font=("", 32, "bold"), width=3, anchor="center"
+        focus_frame, text=str(int(default_focus)), font=("", FS_LG, "bold"), width=3, anchor="center"
     )
     rating_lbl.pack()
 
+    desc_lbl = ttk.Label(
+        focus_frame, text=_focus_descriptor(int(default_focus)), font=("", FS_XS), foreground=C_MUTED
+    )
+    desc_lbl.pack(pady=(0, 4))
+
     def _on_scale(val: str) -> None:
-        rating_lbl.config(text=str(int(float(val))))
+        v = int(float(val))
+        rating_lbl.config(text=str(v))
+        desc_lbl.config(text=_focus_descriptor(v))
 
     ttk.Scale(
-        focus_lf, from_=1, to=10, orient=tk.HORIZONTAL,
+        focus_frame, from_=1, to=10, orient=tk.HORIZONTAL,
         variable=focus_var, command=_on_scale, length=340,
-    ).pack(pady=(6, 2))
+    ).pack(pady=(4, 2))
 
-    tips = ttk.Frame(focus_lf)
+    tips = ttk.Frame(focus_frame)
     tips.pack(fill=tk.X)
-    ttk.Label(tips, text="1 – terrible", foreground="gray", font=("", 10)).pack(side=tk.LEFT)
-    ttk.Label(tips, text="10 – perfect", foreground="gray", font=("", 10)).pack(side=tk.RIGHT)
+    ttk.Label(tips, text="1 – terrible", foreground=C_MUTED, font=("", FS_XS)).pack(side=tk.LEFT)
+    ttk.Label(tips, text="10 – perfect", foreground=C_MUTED, font=("", FS_XS)).pack(side=tk.RIGHT)
 
     # ── Topic ─────────────────────────────────────────────────────────────────
-    topic_lf = ttk.LabelFrame(frame, text="  Topic / Project  ", padding=12)
+    topic_sec_hdr = _section_header(frame, "Topic / Project")
+    topic_frame = ttk.Frame(frame)
+    topic_frame.pack(fill=tk.X, pady=(0, 4))
 
-    error_lbl = ttk.Label(frame, text="⚠  Please enter a topic before saving.", foreground="red", font=("", 11))
-
-    topic_lf.pack(fill=tk.X, pady=(0, 12))
+    error_lbl = ttk.Label(frame, text="⚠  Please enter a topic before saving.", foreground="red", font=("", FS_SM))
 
     topic_var = tk.StringVar()
     existing_topics = db.get_all_topics()
@@ -365,23 +411,22 @@ def show_session_form(duration_minutes: int) -> dict | None:
     def _on_topic_var_changed(*_: object) -> None:
         current = topic_var.get()
         for t, b in chip_btns.items():
-            if current == t:
-                b.config(bg="#0055cc", fg="#ffffff")
-            else:
-                b.config(bg="#aaaaaa", fg="#000000")
+            b.config(
+                bg=C_CHIP_SEL_BG   if current == t else C_CHIP_UNSEL_BG,
+                fg=C_CHIP_SEL_FG   if current == t else C_CHIP_UNSEL_FG,
+            )
         if current.strip():
             error_lbl.pack_forget()
 
     if existing_topics:
-        chips_outer = ttk.Frame(topic_lf)
+        chips_outer = ttk.Frame(topic_frame)
         chips_outer.pack(fill=tk.X, pady=(0, 8))
 
-        # Lay out chips in wrapping rows; ~7 px per char at 11 pt, 22 px h-padding
         AVAIL_W = 360
         rows_of_topics: list[list[str]] = [[]]
         row_w = 0
         for _t in existing_topics:
-            _bw = len(_t) * 7 + 28  # estimated button width + gap
+            _bw = len(_t) * 7 + 36
             if row_w > 0 and row_w + _bw > AVAIL_W:
                 rows_of_topics.append([])
                 row_w = 0
@@ -394,38 +439,39 @@ def show_session_form(duration_minutes: int) -> dict | None:
             for _topic in _row_topics:
                 _btn = tk.Button(
                     _row_frame, text=_topic, relief="flat",
-                    bg="#aaaaaa", fg="#000000",
-                    font=("", 11), padx=10, pady=4, cursor="hand2", bd=0,
+                    bg=C_CHIP_UNSEL_BG, fg=C_CHIP_UNSEL_FG,
+                    font=("", FS_SM), padx=14, pady=6, cursor="hand2", bd=0,
                     command=lambda t=_topic: topic_var.set(t),
                 )
                 _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
                 chip_btns[_topic] = _btn
 
-        ttk.Label(topic_lf, text="Or add a new one:", foreground="gray", font=("", 10)).pack(anchor=tk.W)
+        ttk.Label(topic_frame, text="Or add a new one:", foreground=C_MUTED, font=("", FS_XS)).pack(anchor=tk.W)
     else:
         ttk.Label(
-            topic_lf,
+            topic_frame,
             text="e.g.  Math homework · Work report · Reading",
-            foreground="gray", font=("", 10),
+            foreground=C_MUTED, font=("", FS_XS),
         ).pack(anchor=tk.W, pady=(0, 4))
-    ttk.Entry(topic_lf, textvariable=topic_var, font=("", 13)).pack(fill=tk.X)
+    ttk.Entry(topic_frame, textvariable=topic_var, font=("", FS_SM)).pack(fill=tk.X)
     topic_var.trace_add("write", _on_topic_var_changed)
 
     # ── Distraction ───────────────────────────────────────────────────────────
-    distract_lf = ttk.LabelFrame(frame, text="  Distractions  ", padding=12)
-    distract_lf.pack(fill=tk.X, pady=(0, 12))
+    _section_header(frame, "Distractions")
+    distract_frame = ttk.Frame(frame)
+    distract_frame.pack(fill=tk.X, pady=(0, 4))
 
     distracted_var = tk.BooleanVar(value=False)
     ttk.Checkbutton(
-        distract_lf,
+        distract_frame,
         text="I got distracted during this session",
         variable=distracted_var,
     ).pack(anchor=tk.W)
 
-    reason_container = ttk.Frame(distract_lf)
-    ttk.Label(reason_container, text="What distracted you?").pack(anchor=tk.W)
+    reason_container = ttk.Frame(distract_frame)
+    ttk.Label(reason_container, text="What distracted you?", font=("", FS_SM)).pack(anchor=tk.W)
     reason_text = tk.Text(
-        reason_container, height=3, font=("", 12), wrap=tk.WORD,
+        reason_container, height=3, font=("", FS_SM), wrap=tk.WORD,
         relief="solid", borderwidth=1,
     )
     reason_text.pack(fill=tk.X, pady=(2, 0))
@@ -451,7 +497,7 @@ def show_session_form(duration_minutes: int) -> dict | None:
     def _submit() -> None:
         term = term_var.get().strip()
         if not term:
-            term_error_lbl.pack(before=focus_lf, pady=(0, 6))
+            term_error_lbl.pack(before=focus_sec_hdr, pady=(0, 6))
             root.update_idletasks()
             root.geometry(f"460x{root.winfo_reqheight()}")
             _center_window(root)
@@ -514,11 +560,11 @@ def show_history_window() -> None:
 
     hdr = ttk.Frame(root, padding=(10, 8, 10, 4))
     hdr.pack(fill=tk.X)
-    ttk.Label(hdr, text="Term:", font=("", 12, "bold")).pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Label(hdr, text="Term:", font=("", FS_SM, "bold")).pack(side=tk.LEFT, padx=(0, 8))
     term_var = tk.StringVar(value=default_term)
     ttk.Combobox(
         hdr, textvariable=term_var, values=term_options,
-        state="readonly", width=24, font=("", 12),
+        state="readonly", width=24, font=("", FS_SM),
     ).pack(side=tk.LEFT)
 
     nb_holder: list[ttk.Notebook | None] = [None]
@@ -537,7 +583,7 @@ def show_history_window() -> None:
 
         style = ttk.Style(root)
         style.configure("Treeview", foreground="#000000", background="#ffffff",
-                        fieldbackground="#ffffff", rowheight=22)
+                        fieldbackground="#ffffff", rowheight=24)
         style.configure("Treeview.Heading", foreground="#000000")
         style.map("Treeview", foreground=[("selected", "#ffffff")])
 
@@ -573,8 +619,8 @@ def show_history_window() -> None:
         tree.bind("<MouseWheel>",
                   lambda e: tree.yview_scroll(int(-1 * (e.delta / 30)), "units"))
 
-        tree.tag_configure("even", background="#f0f0f0", foreground="#000000")
-        tree.tag_configure("odd",  background="#ffffff", foreground="#000000")
+        tree.tag_configure("even", background=C_ROW_EVEN, foreground="#000000")
+        tree.tag_configure("odd",  background=C_ROW_ODD,  foreground="#000000")
 
         sessions = db.get_all_sessions(tf)
         for i, row in enumerate(sessions):
@@ -621,7 +667,7 @@ def show_history_window() -> None:
             f"Total focus time:   {total_h}",
             f"Average focus:      {avg_focus} / 10",
         ):
-            ttk.Label(banner, text=text, font=("", 13)).pack(anchor=tk.W, pady=1)
+            ttk.Label(banner, text=text, font=("", FS_SM)).pack(anchor=tk.W, pady=1)
 
         cols_frame = ttk.Frame(stats_tab)
         cols_frame.pack(fill=tk.BOTH, expand=True)
@@ -678,7 +724,7 @@ def show_history_window() -> None:
         hist_data = db.get_daily_by_topic(tf)
         if not hist_data:
             ttk.Label(hist_tab, text="No sessions recorded yet.",
-                      font=("", 13), foreground="gray").pack(expand=True)
+                      font=("", FS_SM), foreground=C_MUTED).pack(expand=True)
         else:
             day_topic: dict[str, dict[str, tuple[int, float | None, int]]] = {}
             all_topics_set: set[str] = set()
@@ -821,11 +867,11 @@ def show_insights_window() -> None:
 
     hdr = ttk.Frame(root, padding=(10, 8, 10, 4))
     hdr.pack(fill=tk.X)
-    ttk.Label(hdr, text="Term:", font=("", 12, "bold")).pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Label(hdr, text="Term:", font=("", FS_SM, "bold")).pack(side=tk.LEFT, padx=(0, 8))
     term_var = tk.StringVar(value=default_term)
     ttk.Combobox(
         hdr, textvariable=term_var, values=term_options,
-        state="readonly", width=24, font=("", 12),
+        state="readonly", width=24, font=("", FS_SM),
     ).pack(side=tk.LEFT)
 
     nb_holder: list[ttk.Notebook | None] = [None]
@@ -856,14 +902,14 @@ def show_insights_window() -> None:
         ttk.Label(
             banner,
             text=f"Sessions with distractions:  {dist_s} of {total_s}  ({dist_pct}%)",
-            font=("", 13),
+            font=("", FS_SM),
         ).pack(anchor=tk.W)
 
         word_data = db.get_distraction_word_freq(term=tf)
 
         if not word_data:
             ttk.Label(words_tab, text="No distraction notes recorded yet.",
-                      font=("", 13), foreground="gray").pack(expand=True)
+                      font=("", FS_SM), foreground=C_MUTED).pack(expand=True)
             w_btn = ttk.Frame(words_tab)
             w_btn.pack(fill=tk.X, pady=(8, 0))
             ttk.Button(w_btn, text="Close", command=root.destroy).pack(side=tk.RIGHT)
@@ -946,7 +992,7 @@ def show_insights_window() -> None:
 
             w_style = ttk.Style(root)
             w_style.configure("Treeview", foreground="#000000", background="#ffffff",
-                              fieldbackground="#ffffff", rowheight=22)
+                              fieldbackground="#ffffff", rowheight=24)
             w_style.configure("Treeview.Heading", foreground="#000000")
             w_style.map("Treeview", foreground=[("selected", "#ffffff")])
 
@@ -955,8 +1001,8 @@ def show_insights_window() -> None:
                 bar    = "█" * filled + "░" * (BAR_LEN - filled)
                 w_tree.insert("", tk.END, tags=("even" if i % 2 == 0 else "odd",),
                               values=(i + 1, word, count, bar))
-            w_tree.tag_configure("even", background="#f0f0f0", foreground="#000000")
-            w_tree.tag_configure("odd",  background="#ffffff", foreground="#000000")
+            w_tree.tag_configure("even", background=C_ROW_EVEN, foreground="#000000")
+            w_tree.tag_configure("odd",  background=C_ROW_ODD,  foreground="#000000")
 
         # ── Tab 2: When Distracted ────────────────────────────────────────────
         when_tab = ttk.Frame(nb, padding=8)
@@ -991,7 +1037,7 @@ def show_insights_window() -> None:
         )
         if no_when_data:
             ttk.Label(when_tab, text="No session data yet.",
-                      font=("", 13), foreground="gray").pack(expand=True)
+                      font=("", FS_SM), foreground=C_MUTED).pack(expand=True)
         else:
             charts_frame = ttk.Frame(when_tab)
             charts_frame.pack(fill=tk.BOTH, expand=True)
@@ -1106,7 +1152,7 @@ def show_insights_window() -> None:
 
         if not daily_rows:
             ttk.Label(daily_tab, text="No session data yet.",
-                      font=("", 13), foreground="gray").pack(expand=True)
+                      font=("", FS_SM), foreground=C_MUTED).pack(expand=True)
         else:
             daily_pts: list[tuple[str, float, int, int]] = []
             for row in daily_rows:
@@ -1182,7 +1228,7 @@ def show_insights_window() -> None:
 
         if not weekly_rows:
             ttk.Label(trend_tab, text="No session data yet.",
-                      font=("", 13), foreground="gray").pack(expand=True)
+                      font=("", FS_SM), foreground=C_MUTED).pack(expand=True)
         else:
             trend_pts: list[tuple[str, float, int, int]] = []
             for row in weekly_rows:
@@ -1259,7 +1305,7 @@ def show_insights_window() -> None:
 
         if len(scatter_pts) < 2:
             ttk.Label(scatter_tab, text="Not enough data yet (need ≥ 2 days with focus scores).",
-                      font=("", 13), foreground="gray").pack(expand=True)
+                      font=("", FS_SM), foreground=C_MUTED).pack(expand=True)
             ttk.Button(scatter_tab, text="Close", command=root.destroy).pack(side=tk.BOTTOM, anchor=tk.E, pady=4)
         else:
             xs = [p[0] for p in scatter_pts]
@@ -1315,15 +1361,15 @@ def show_insights_window() -> None:
                 row_f = ttk.Frame(stats_frame)
                 row_f.pack(fill=tk.X, pady=2)
                 if label:
-                    ttk.Label(row_f, text=f"{label}:", font=("", 11, "bold"), width=10,
+                    ttk.Label(row_f, text=f"{label}:", font=("", FS_SM, "bold"), width=10,
                               anchor="w").pack(side=tk.LEFT)
-                ttk.Label(row_f, text=val, font=("", 11), foreground="#555").pack(side=tk.LEFT)
+                ttk.Label(row_f, text=val, font=("", FS_SM), foreground=C_MUTED).pack(side=tk.LEFT)
             interp_txt = (
                 "Positive slope: more study → higher focus" if slope > 0
                 else "Negative slope: more study → lower focus" if slope < 0
                 else "No trend detected"
             )
-            ttk.Label(stats_frame, text=interp_txt, font=("", 10, "italic"),
+            ttk.Label(stats_frame, text=interp_txt, font=("", FS_XS, "italic"),
                       foreground="#777", wraplength=160).pack(pady=(12, 0))
 
             cv_sc = tk.Canvas(sc_outer, bg="white", highlightthickness=0,
@@ -1375,7 +1421,7 @@ def show_insights_window() -> None:
 
         if not start_rows:
             ttk.Label(start_tab, text="Not enough data yet.",
-                      font=("", 13), foreground="gray").pack(expand=True)
+                      font=("", FS_SM), foreground=C_MUTED).pack(expand=True)
             ttk.Button(start_tab, text="Close", command=root.destroy).pack(side=tk.BOTTOM, anchor=tk.E, pady=4)
         else:
             start_data = [(r["start_group"], float(r["avg_focus"]), int(r["days"])) for r in start_rows]
@@ -1450,7 +1496,7 @@ def show_insights_window() -> None:
 
         if len(fsct_pts) < 2:
             ttk.Label(fsct_tab, text="Not enough data yet (need ≥ 2 sessions with focus scores).",
-                      font=("", 13), foreground="gray").pack(expand=True)
+                      font=("", FS_SM), foreground=C_MUTED).pack(expand=True)
             ttk.Button(fsct_tab, text="Close", command=root.destroy).pack(side=tk.BOTTOM, anchor=tk.E, pady=4)
         else:
             FSCT_ML, FSCT_MR = 60, 30
