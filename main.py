@@ -182,6 +182,7 @@ class PomodoroApp(rumps.App):
                                 form_result["distracted"],
                                 form_result.get("reason"),
                                 start_time=ss,
+                                term=form_result.get("term"),
                             )
                     threading.Thread(target=_show_form_kept, daemon=True).start()
                 # else: timer still running — it kept counting, just continue
@@ -255,6 +256,7 @@ class PomodoroApp(rumps.App):
                             result["distracted"],
                             result.get("reason"),
                             start_time=session_start,
+                            term=result.get("term"),
                         )
                 threading.Thread(target=_show_form, daemon=True).start()
 
@@ -397,6 +399,7 @@ class PomodoroApp(rumps.App):
                         result["distracted"],
                         result.get("reason"),
                         start_time=session_start,
+                        term=result.get("term"),
                     )
             threading.Thread(target=_show_form, daemon=True).start()
 
