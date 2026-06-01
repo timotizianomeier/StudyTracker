@@ -13,7 +13,7 @@ import db
 
 C_PRIMARY       = "#c0392b"   # tomato red — selected state, primary actions
 C_CHIP_SEL_BG   = "#c0392b"
-C_CHIP_SEL_FG   = "#ffffff"
+C_CHIP_SEL_FG   = "#1a1a1a"
 C_CHIP_UNSEL_BG = "#eeeeee"
 C_CHIP_UNSEL_FG = "#555555"
 C_MUTED         = "#888888"
@@ -344,7 +344,7 @@ def show_session_form(duration_minutes: int) -> dict | None:
                 _btn = tk.Button(
                     _rf, text=_term_name, relief="flat",
                     bg=C_CHIP_UNSEL_BG, fg=C_CHIP_UNSEL_FG,
-                    font=("", FS_SM), padx=14, pady=6, cursor="hand2", bd=0,
+                    font=("", FS_SM), padx=8, pady=3, cursor="hand2", bd=0,
                     command=lambda t=_term_name: term_var.set(t),
                 )
                 _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
@@ -440,7 +440,7 @@ def show_session_form(duration_minutes: int) -> dict | None:
                 _btn = tk.Button(
                     _row_frame, text=_topic, relief="flat",
                     bg=C_CHIP_UNSEL_BG, fg=C_CHIP_UNSEL_FG,
-                    font=("", FS_SM), padx=14, pady=6, cursor="hand2", bd=0,
+                    font=("", FS_SM), padx=8, pady=3, cursor="hand2", bd=0,
                     command=lambda t=_topic: topic_var.set(t),
                 )
                 _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
