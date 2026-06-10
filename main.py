@@ -73,6 +73,7 @@ class PomodoroApp(rumps.App):
         self._start_queue: queue.Queue[int] = queue.Queue()
         self._session_start_time: datetime | None = None
         self.sound_on:    bool = True
+        self._distractions: list[str] = []
 
         # Screen-lock state
         self._lock_time: datetime | None = None
@@ -95,10 +96,11 @@ class PomodoroApp(rumps.App):
         self._stop_item   = rumps.MenuItem("⏹  Stop Session")
         self._clock_item  = rumps.MenuItem("✓  Show countdown", callback=self._toggle_clock)
         self._sound_item  = rumps.MenuItem("✓  Play sound",     callback=self._toggle_sound)
-        self._config_item = rumps.MenuItem("⚙  Configure…",     callback=self._configure)
-        self._hist_item     = rumps.MenuItem("📋  View History",      callback=self._view_history)
-        self._insights_item = rumps.MenuItem("🔍  Insights (Beta)",  callback=self._view_insights)
-        self._quit_item   = rumps.MenuItem("Quit",              callback=rumps.quit_application)
+        self._config_item   = rumps.MenuItem("⚙  Configure…",          callback=self._configure)
+        self._distract_item = rumps.MenuItem("💭  Record Distraction")
+        self._hist_item     = rumps.MenuItem("📋  View History",       callback=self._view_history)
+        self._insights_item = rumps.MenuItem("🔍  Insights (Beta)",   callback=self._view_insights)
+        self._quit_item     = rumps.MenuItem("Quit",                   callback=rumps.quit_application)
 
         self._meditate_item = rumps.MenuItem("🧘  Meditate")
         self._meditate_item["breathing"] = rumps.MenuItem(
@@ -114,6 +116,7 @@ class PomodoroApp(rumps.App):
             self._start_item,
             self._pause_item,
             self._stop_item,
+            self._distract_item,
             None,
             self._clock_item,
             self._sound_item,
@@ -172,8 +175,9 @@ class PomodoroApp(rumps.App):
                     self.title = self._ICON_IDLE
                     self._set_running(False)
                     session_start = self._session_start_time
-                    def _show_form_kept(d=finished_dur, ss=session_start) -> None:
-                        form_result = _run_window("session_form", d)
+                    distractions_copy = list(self._distractions)
+                    def _show_form_kept(d=finished_dur, ss=session_start, dc=distractions_copy) -> None:
+                        form_result = _run_window("session_form", d, json.dumps(dc))
                         if form_result:
                             db.save_session(
                                 d,
@@ -212,6 +216,7 @@ class PomodoroApp(rumps.App):
             duration = self._start_queue.get_nowait()
             self.session_minutes = duration
             self.is_paused = False
+            self._distractions.clear()
             self._session_start_time = datetime.now()
             self._set_running(True)
             self._timer_thread = threading.Thread(
@@ -246,16 +251,17 @@ class PomodoroApp(rumps.App):
                 # Run the session form in a background thread so the main thread
                 # stays free (session is over so there's nothing else to tick).
                 session_start = self._session_start_time
-                def _show_form() -> None:
-                    result = _run_window("session_form", duration)
+                distractions_copy = list(self._distractions)
+                def _show_form(d=duration, ss=session_start, dc=distractions_copy) -> None:
+                    result = _run_window("session_form", d, json.dumps(dc))
                     if result:
                         db.save_session(
-                            duration,
+                            d,
                             result["focus"],
                             result.get("topic"),
                             result["distracted"],
                             result.get("reason"),
-                            start_time=session_start,
+                            start_time=ss,
                             term=result.get("term"),
                         )
                 threading.Thread(target=_show_form, daemon=True).start()
@@ -346,10 +352,12 @@ class PomodoroApp(rumps.App):
             self._start_item.set_callback(None)
             self._pause_item.set_callback(self._pause_session)
             self._stop_item.set_callback(self._stop_session)
+            self._distract_item.set_callback(self._record_distraction)
         else:
             self._start_item.set_callback(self._start_session)
             self._pause_item.set_callback(None)
             self._stop_item.set_callback(None)
+            self._distract_item.set_callback(None)
             self._pause_item.title = "⏸  Pause Session"
             self._status_item.title = "No session running"
 
@@ -364,6 +372,15 @@ class PomodoroApp(rumps.App):
             result = _run_window("start_session", self.session_minutes)
             if result is not None:
                 self._start_queue.put(result)
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _record_distraction(self, _: rumps.MenuItem) -> None:
+        if not self.is_running:
+            return
+        def _run() -> None:
+            result = _run_window("distraction_input")
+            if result:
+                self._distractions.append(result)
         threading.Thread(target=_run, daemon=True).start()
 
     def _pause_session(self, _: rumps.MenuItem) -> None:
@@ -389,16 +406,17 @@ class PomodoroApp(rumps.App):
         if elapsed_seconds >= 300:   # only log if at least 5 minutes elapsed
             elapsed_minutes = max(1, round(elapsed_seconds / 60))
             session_start = self._session_start_time
-            def _show_form() -> None:
-                result = _run_window("session_form", elapsed_minutes)
+            distractions_copy = list(self._distractions)
+            def _show_form(em=elapsed_minutes, ss=session_start, dc=distractions_copy) -> None:
+                result = _run_window("session_form", em, json.dumps(dc))
                 if result:
                     db.save_session(
-                        elapsed_minutes,
+                        em,
                         result["focus"],
                         result.get("topic"),
                         result["distracted"],
                         result.get("reason"),
-                        start_time=session_start,
+                        start_time=ss,
                         term=result.get("term"),
                     )
             threading.Thread(target=_show_form, daemon=True).start()

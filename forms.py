@@ -272,9 +272,63 @@ def show_screen_lock_dialog(elapsed_seconds: int) -> dict | None:
     return result[0]
 
 
+# ─── Distraction capture popup ────────────────────────────────────────────────
+
+def show_distraction_input() -> str | None:
+    """
+    Tiny quick-capture popup shown mid-session when the user records a distraction.
+    Returns the distraction text or None if cancelled.
+    """
+    result: list[str | None] = [None]
+
+    root = tk.Tk()
+    root.withdraw()
+    root.title("Record Distraction")
+    root.geometry("360x160")
+    root.resizable(False, False)
+    _theme(root)
+    _bring_to_front(root)
+
+    frame = ttk.Frame(root, padding=20)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    ttk.Label(frame, text="💭  What's distracting you?", font=("", FS_SM, "bold")).pack(anchor=tk.W)
+    ttk.Label(
+        frame, text="Note it down, then get back to focus.",
+        font=("", FS_XS), foreground=C_MUTED,
+    ).pack(anchor=tk.W, pady=(2, 10))
+
+    text_var = tk.StringVar()
+    entry = ttk.Entry(frame, textvariable=text_var, font=("", FS_SM))
+    entry.pack(fill=tk.X)
+    entry.focus_set()
+
+    def _submit() -> None:
+        txt = text_var.get().strip()
+        if txt:
+            result[0] = txt
+        root.quit()
+
+    def _cancel() -> None:
+        root.quit()
+
+    btn_frame = ttk.Frame(frame)
+    btn_frame.pack(fill=tk.X, pady=(12, 0))
+    ttk.Button(btn_frame, text="Cancel", command=_cancel).pack(side=tk.LEFT)
+    ttk.Button(btn_frame, text="Record ✓", command=_submit).pack(side=tk.RIGHT)
+
+    root.protocol("WM_DELETE_WINDOW", _cancel)
+    root.bind("<Return>", lambda _: _submit())
+    root.bind("<Escape>", lambda _: _cancel())
+
+    root.mainloop()
+    root.destroy()
+    return result[0]
+
+
 # ─── Post-session feedback form ───────────────────────────────────────────────
 
-def show_session_form(duration_minutes: int) -> dict | None:
+def show_session_form(duration_minutes: int, distractions: list[str] | None = None) -> dict | None:
     """
     Modal form shown after each session ends.
     Returns dict {focus, topic, distracted, reason} or None if skipped.
@@ -298,6 +352,24 @@ def show_session_form(duration_minutes: int) -> dict | None:
         foreground=C_MUTED,
         font=("", FS_SM),
     ).pack(pady=(0, 4))
+
+    # ── Distraction reminder ──────────────────────────────────────────────────
+    if distractions:
+        _section_header(frame, "Distractions to follow up on")
+        reminder_frame = tk.Frame(frame, bg="#fff8e1", relief="flat", bd=0)
+        reminder_frame.pack(fill=tk.X, pady=(0, 6))
+        dist_text = ", ".join(distractions)
+        tk.Label(
+            reminder_frame,
+            text=dist_text,
+            bg="#fff8e1",
+            font=("", FS_SM),
+            fg="#5d4037",
+            wraplength=420,
+            justify=tk.LEFT,
+            padx=10,
+            pady=8,
+        ).pack(anchor=tk.W)
 
     # ── Term ──────────────────────────────────────────────────────────────────
     term_sec_hdr = _section_header(frame, "Term")

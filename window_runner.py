@@ -61,8 +61,15 @@ def main() -> None:
 
     elif window == "session_form":
         duration = int(sys.argv[2])
+        distractions = json.loads(sys.argv[3]) if len(sys.argv) > 3 else []
         from forms import show_session_form
-        result = show_session_form(duration)
+        result = show_session_form(duration, distractions=distractions)
+        if result is not None:
+            print(json.dumps(result), flush=True)
+
+    elif window == "distraction_input":
+        from forms import show_distraction_input
+        result = show_distraction_input()
         if result is not None:
             print(json.dumps(result), flush=True)
 
