@@ -358,18 +358,24 @@ def show_session_form(duration_minutes: int, distractions: list[str] | None = No
         _section_header(frame, "Distractions to follow up on")
         reminder_frame = tk.Frame(frame, bg="#fff8e1", relief="flat", bd=0)
         reminder_frame.pack(fill=tk.X, pady=(0, 6))
-        dist_text = ", ".join(distractions)
-        tk.Label(
+        dist_text = "\n".join(f"• {d}" for d in distractions)
+        dist_box = tk.Text(
             reminder_frame,
-            text=dist_text,
             bg="#fff8e1",
             font=("", FS_SM),
             fg="#5d4037",
-            wraplength=420,
-            justify=tk.LEFT,
+            relief="flat",
+            bd=0,
+            wrap=tk.WORD,
             padx=10,
             pady=8,
-        ).pack(anchor=tk.W)
+            height=len(distractions),
+            width=52,
+            cursor="arrow",
+        )
+        dist_box.insert("1.0", dist_text)
+        dist_box.config(state=tk.DISABLED)
+        dist_box.pack(anchor=tk.W)
 
     # ── Term ──────────────────────────────────────────────────────────────────
     term_sec_hdr = _section_header(frame, "Term")
