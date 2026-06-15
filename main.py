@@ -75,7 +75,6 @@ class PomodoroApp(rumps.App):
         self.sound_on:    bool = True
         self._distractions: list[str] = []
         self._app_warning_showing: bool = False
-        self._last_app_warning_time: float = 0.0
         self._app_blocker_observers: list = []
 
         # Screen-lock state
@@ -463,7 +462,7 @@ class PomodoroApp(rumps.App):
             pass
 
     def _check_blocked_apps_at_start(self) -> None:
-        """One-shot background check at session start for already-running blocked apps."""
+        """Quit all blocked apps that are already running when a session starts."""
         try:
             from AppKit import NSWorkspace
             import config as _cfg
@@ -473,8 +472,13 @@ class PomodoroApp(rumps.App):
             for app in NSWorkspace.sharedWorkspace().runningApplications():
                 name = app.localizedName()
                 if name in blocked:
-                    self._maybe_warn_blocked_app(name)
-                    return
+                    try:
+                        subprocess.run(
+                            ["osascript", "-e", f'tell application "{name}" to quit'],
+                            timeout=5, check=False,
+                        )
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -484,13 +488,11 @@ class PomodoroApp(rumps.App):
         if (not self.is_running
                 or self.is_paused
                 or self._app_warning_showing
-                or not _cfg.is_app_blocking_enabled()
-                or time.monotonic() - self._last_app_warning_time < 180):
+                or not _cfg.is_app_blocking_enabled()):
             return
         if app_name not in set(_cfg.get_blocked_apps()):
             return
         self._app_warning_showing = True
-        self._last_app_warning_time = time.monotonic()
         def _warn(name: str = app_name) -> None:
             _run_window("app_warning", name)
             self._app_warning_showing = False

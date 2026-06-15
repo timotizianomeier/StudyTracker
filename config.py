@@ -13,6 +13,7 @@ DEFAULT_BLOCKED_APPS = [
     "Discord",
     "Telegram",
     "Microsoft Teams",
+    "Microsoft Outlook",
     "Mimestream",
     "Spark",
 ]

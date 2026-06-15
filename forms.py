@@ -1895,7 +1895,19 @@ def show_grounding_exercise() -> None:
 # ─── App blocker: warning dialog ──────────────────────────────────────────────
 
 def show_app_warning_dialog(app_name: str) -> None:
-    """Topmost warning shown when a distracting app is detected mid-session."""
+    """Topmost warning shown when a distracting app is detected — quits it and auto-dismisses."""
+    import subprocess
+    import threading
+
+    def _quit_app() -> None:
+        try:
+            subprocess.run(
+                ["osascript", "-e", f'tell application "{app_name}" to quit'],
+                timeout=5, check=False,
+            )
+        except Exception:
+            pass
+
     root = tk.Tk()
     root.withdraw()
     root.title("Stay Focused!")
@@ -1907,10 +1919,10 @@ def show_app_warning_dialog(app_name: str) -> None:
     frame = ttk.Frame(root, padding=28)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    ttk.Label(frame, text="🚫  Distracting App Detected", font=("", FS_MD, "bold")).pack(pady=(0, 10))
+    ttk.Label(frame, text="🚫  Distracting App Closed", font=("", FS_MD, "bold")).pack(pady=(0, 10))
     ttk.Label(
         frame,
-        text=f"{app_name} is open — you're in a focus session!\nClose it and get back to work.",
+        text=f"{app_name} has been closed.\nStay focused on your session!",
         font=("", FS_SM),
         justify=tk.CENTER,
     ).pack(pady=(0, 20))
@@ -1918,11 +1930,17 @@ def show_app_warning_dialog(app_name: str) -> None:
     def _dismiss() -> None:
         root.quit()
 
-    ttk.Button(frame, text="Got it, I'll close it ✓", command=_dismiss).pack()
+    ttk.Button(frame, text="OK", command=_dismiss).pack()
 
     root.protocol("WM_DELETE_WINDOW", _dismiss)
     root.bind("<Return>", lambda _: _dismiss())
     root.bind("<Escape>", lambda _: _dismiss())
+
+    def _quit_then_close() -> None:
+        _quit_app()
+        root.after(0, _dismiss)
+
+    root.after(100, lambda: threading.Thread(target=_quit_then_close, daemon=True).start())
 
     root.mainloop()
     root.destroy()
