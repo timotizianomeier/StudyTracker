@@ -75,6 +75,8 @@ class PomodoroApp(rumps.App):
         self.sound_on:    bool = True
         self._distractions: list[str] = []
         self._app_warning_showing: bool = False
+        self._last_app_warning_time: float = 0.0
+        self._app_blocker_observers: list = []
 
         # Screen-lock state
         self._lock_time: datetime | None = None
@@ -137,6 +139,7 @@ class PomodoroApp(rumps.App):
 
         db.init_db()
         self._setup_screen_lock_detection()
+        self._setup_app_blocker_observers()
 
     # ── Internal timer ────────────────────────────────────────────────────────
 
@@ -228,7 +231,7 @@ class PomodoroApp(rumps.App):
                 target=self._countdown, args=(self.session_minutes * 60,), daemon=True
             )
             self._timer_thread.start()
-            threading.Thread(target=self._app_blocker_poll, daemon=True).start()
+            threading.Thread(target=self._check_blocked_apps_at_start, daemon=True).start()
 
         if self.is_running:
             m, s = divmod(self.time_remaining, 60)
@@ -429,50 +432,69 @@ class PomodoroApp(rumps.App):
 
     # ── App blocker ───────────────────────────────────────────────────────────
 
-    def _check_blocked_apps(self) -> str | None:
-        """Return the name of the first blocked app found running, or None."""
-        import config as _cfg
-        if not _cfg.is_app_blocking_enabled():
-            return None
-        blocked = set(_cfg.get_blocked_apps())
-        if not blocked:
-            return None
+    def _setup_app_blocker_observers(self) -> None:
+        """Register NSWorkspace observers for app launch and activation events."""
         try:
-            result = subprocess.run(
-                ["osascript", "-e",
-                 "tell application \"System Events\" to get name of "
-                 "(processes where background only is false)"],
-                capture_output=True, text=True, timeout=5,
+            from AppKit import NSWorkspace
+            from Foundation import NSOperationQueue
+            nc = NSWorkspace.sharedWorkspace().notificationCenter()
+            token_launch = nc.addObserverForName_object_queue_usingBlock_(
+                "NSWorkspaceDidLaunchApplicationNotification",
+                None, NSOperationQueue.mainQueue(),
+                lambda n: self._on_app_event(n),
             )
-            if result.returncode != 0:
-                return None
-            running = {name.strip() for name in result.stdout.split(",")}
-            for app in blocked:
-                if app in running:
-                    return app
+            token_activate = nc.addObserverForName_object_queue_usingBlock_(
+                "NSWorkspaceDidActivateApplicationNotification",
+                None, NSOperationQueue.mainQueue(),
+                lambda n: self._on_app_event(n),
+            )
+            self._app_blocker_observers = [token_launch, token_activate]
         except Exception:
             pass
-        return None
 
-    def _app_blocker_poll(self) -> None:
-        """Background thread: check every 30 s for blocked apps during a session."""
-        last_warned = 0.0
-        time.sleep(10)  # short grace period at session start
-        while self.is_running:
-            now = time.monotonic()
-            # 3-minute cooldown between warnings; skip while paused or warning showing
-            if (not self.is_paused
-                    and not self._app_warning_showing
-                    and now - last_warned > 180):
-                detected = self._check_blocked_apps()
-                if detected:
-                    self._app_warning_showing = True
-                    last_warned = now
-                    def _warn(app: str = detected) -> None:
-                        _run_window("app_warning", app)
-                        self._app_warning_showing = False
-                    threading.Thread(target=_warn, daemon=True).start()
-            time.sleep(30)
+    def _on_app_event(self, notification) -> None:
+        """Called on the main thread when an app launches or becomes frontmost."""
+        try:
+            from AppKit import NSWorkspaceApplicationKey
+            app = notification.userInfo().get(NSWorkspaceApplicationKey)
+            if app is not None:
+                self._maybe_warn_blocked_app(app.localizedName())
+        except Exception:
+            pass
+
+    def _check_blocked_apps_at_start(self) -> None:
+        """One-shot background check at session start for already-running blocked apps."""
+        try:
+            from AppKit import NSWorkspace
+            import config as _cfg
+            if not _cfg.is_app_blocking_enabled():
+                return
+            blocked = set(_cfg.get_blocked_apps())
+            for app in NSWorkspace.sharedWorkspace().runningApplications():
+                name = app.localizedName()
+                if name in blocked:
+                    self._maybe_warn_blocked_app(name)
+                    return
+        except Exception:
+            pass
+
+    def _maybe_warn_blocked_app(self, app_name: str) -> None:
+        """Show a warning for app_name if all guards pass (session active, cooldown, etc.)."""
+        import config as _cfg
+        if (not self.is_running
+                or self.is_paused
+                or self._app_warning_showing
+                or not _cfg.is_app_blocking_enabled()
+                or time.monotonic() - self._last_app_warning_time < 180):
+            return
+        if app_name not in set(_cfg.get_blocked_apps()):
+            return
+        self._app_warning_showing = True
+        self._last_app_warning_time = time.monotonic()
+        def _warn(name: str = app_name) -> None:
+            _run_window("app_warning", name)
+            self._app_warning_showing = False
+        threading.Thread(target=_warn, daemon=True).start()
 
     def _configure_app_blocker(self, _: rumps.MenuItem) -> None:
         def _run() -> None:
