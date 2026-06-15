@@ -74,6 +74,7 @@ class PomodoroApp(rumps.App):
         self._session_start_time: datetime | None = None
         self.sound_on:    bool = True
         self._distractions: list[str] = []
+        self._app_warning_showing: bool = False
 
         # Screen-lock state
         self._lock_time: datetime | None = None
@@ -96,8 +97,9 @@ class PomodoroApp(rumps.App):
         self._stop_item   = rumps.MenuItem("⏹  Stop Session")
         self._clock_item  = rumps.MenuItem("✓  Show countdown", callback=self._toggle_clock)
         self._sound_item  = rumps.MenuItem("✓  Play sound",     callback=self._toggle_sound)
-        self._config_item   = rumps.MenuItem("⚙  Configure…",          callback=self._configure)
-        self._distract_item = rumps.MenuItem("💭  Record Distraction")
+        self._config_item        = rumps.MenuItem("⚙  Configure…",     callback=self._configure)
+        self._app_blocker_item   = rumps.MenuItem("🚫  App Blocker…",  callback=self._configure_app_blocker)
+        self._distract_item      = rumps.MenuItem("💭  Record Distraction")
         self._hist_item     = rumps.MenuItem("📋  View History",       callback=self._view_history)
         self._insights_item = rumps.MenuItem("🔍  Insights (Beta)",   callback=self._view_insights)
         self._quit_item     = rumps.MenuItem("Quit",                   callback=rumps.quit_application)
@@ -123,6 +125,9 @@ class PomodoroApp(rumps.App):
             self._hist_item,
             self._insights_item,
             self._meditate_item,
+            None,
+            self._config_item,
+            self._app_blocker_item,
             None,
             self._quit_item,
         ]
@@ -223,6 +228,7 @@ class PomodoroApp(rumps.App):
                 target=self._countdown, args=(self.session_minutes * 60,), daemon=True
             )
             self._timer_thread.start()
+            threading.Thread(target=self._app_blocker_poll, daemon=True).start()
 
         if self.is_running:
             m, s = divmod(self.time_remaining, 60)
@@ -420,6 +426,61 @@ class PomodoroApp(rumps.App):
                         term=result.get("term"),
                     )
             threading.Thread(target=_show_form, daemon=True).start()
+
+    # ── App blocker ───────────────────────────────────────────────────────────
+
+    def _check_blocked_apps(self) -> str | None:
+        """Return the name of the first blocked app found running, or None."""
+        import config as _cfg
+        if not _cfg.is_app_blocking_enabled():
+            return None
+        blocked = set(_cfg.get_blocked_apps())
+        if not blocked:
+            return None
+        try:
+            result = subprocess.run(
+                ["osascript", "-e",
+                 "tell application \"System Events\" to get name of "
+                 "(processes where background only is false)"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+            running = {name.strip() for name in result.stdout.split(",")}
+            for app in blocked:
+                if app in running:
+                    return app
+        except Exception:
+            pass
+        return None
+
+    def _app_blocker_poll(self) -> None:
+        """Background thread: check every 30 s for blocked apps during a session."""
+        last_warned = 0.0
+        time.sleep(10)  # short grace period at session start
+        while self.is_running:
+            now = time.monotonic()
+            # 3-minute cooldown between warnings; skip while paused or warning showing
+            if (not self.is_paused
+                    and not self._app_warning_showing
+                    and now - last_warned > 180):
+                detected = self._check_blocked_apps()
+                if detected:
+                    self._app_warning_showing = True
+                    last_warned = now
+                    def _warn(app: str = detected) -> None:
+                        _run_window("app_warning", app)
+                        self._app_warning_showing = False
+                    threading.Thread(target=_warn, daemon=True).start()
+            time.sleep(30)
+
+    def _configure_app_blocker(self, _: rumps.MenuItem) -> None:
+        def _run() -> None:
+            import config as _cfg
+            result = _run_window("app_blocker_settings")
+            if result is not None:
+                _cfg.save_app_blocking_settings(result["enabled"], result["apps"])
+        threading.Thread(target=_run, daemon=True).start()
 
     def _toggle_clock(self, _: rumps.MenuItem) -> None:
         self.show_clock = not self.show_clock

@@ -89,6 +89,17 @@ def main() -> None:
         from forms import show_insights_window
         show_insights_window()
 
+    elif window == "app_warning":
+        app_name = sys.argv[2] if len(sys.argv) > 2 else "A distracting app"
+        from forms import show_app_warning_dialog
+        show_app_warning_dialog(app_name)
+
+    elif window == "app_blocker_settings":
+        from forms import show_app_blocker_settings
+        result = show_app_blocker_settings()
+        if result is not None:
+            print(json.dumps(result), flush=True)
+
 
 if __name__ == "__main__":
     main()

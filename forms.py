@@ -1890,3 +1890,141 @@ def show_grounding_exercise() -> None:
     root.bind("<Return>", lambda _: _advance())
     root.protocol("WM_DELETE_WINDOW", root.destroy)
     root.mainloop()
+
+
+# ─── App blocker: warning dialog ──────────────────────────────────────────────
+
+def show_app_warning_dialog(app_name: str) -> None:
+    """Topmost warning shown when a distracting app is detected mid-session."""
+    root = tk.Tk()
+    root.withdraw()
+    root.title("Stay Focused!")
+    root.geometry("380x190")
+    root.resizable(False, False)
+    _theme(root)
+    _bring_to_front(root)
+
+    frame = ttk.Frame(root, padding=28)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    ttk.Label(frame, text="🚫  Distracting App Detected", font=("", FS_MD, "bold")).pack(pady=(0, 10))
+    ttk.Label(
+        frame,
+        text=f"{app_name} is open — you're in a focus session!\nClose it and get back to work.",
+        font=("", FS_SM),
+        justify=tk.CENTER,
+    ).pack(pady=(0, 20))
+
+    def _dismiss() -> None:
+        root.quit()
+
+    ttk.Button(frame, text="Got it, I'll close it ✓", command=_dismiss).pack()
+
+    root.protocol("WM_DELETE_WINDOW", _dismiss)
+    root.bind("<Return>", lambda _: _dismiss())
+    root.bind("<Escape>", lambda _: _dismiss())
+
+    root.mainloop()
+    root.destroy()
+
+
+# ─── App blocker: settings window ────────────────────────────────────────────
+
+def show_app_blocker_settings() -> dict | None:
+    """
+    Settings window for the app blocking feature.
+    Returns {"enabled": bool, "apps": [str, ...]} or None if cancelled.
+    """
+    import config as _cfg
+
+    current_enabled = _cfg.is_app_blocking_enabled()
+    current_apps    = _cfg.get_blocked_apps()
+
+    result: list[dict | None] = [None]
+
+    root = tk.Tk()
+    root.withdraw()
+    root.title("App Blocker")
+    root.geometry("400x440")
+    root.resizable(False, False)
+    _theme(root)
+    _bring_to_front(root)
+
+    frame = ttk.Frame(root, padding=24)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    ttk.Label(frame, text="🚫  App Blocker", font=("", FS_MD, "bold")).pack(pady=(0, 4))
+    ttk.Label(
+        frame,
+        text="Show a warning when these apps are open\nduring a focus session.",
+        font=("", FS_SM),
+        foreground=C_MUTED,
+        justify=tk.CENTER,
+    ).pack(pady=(0, 12))
+
+    enabled_var = tk.BooleanVar(value=current_enabled)
+    ttk.Checkbutton(frame, text="Enable app blocking warnings", variable=enabled_var).pack(anchor=tk.W)
+
+    _section_header(frame, "Blocked Apps")
+
+    list_frame = ttk.Frame(frame)
+    list_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+
+    vsb = ttk.Scrollbar(list_frame)
+    vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+    apps_listbox = tk.Listbox(
+        list_frame, yscrollcommand=vsb.set,
+        font=("", FS_SM), selectmode=tk.SINGLE, height=8,
+    )
+    apps_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    vsb.config(command=apps_listbox.yview)
+
+    for app in current_apps:
+        apps_listbox.insert(tk.END, app)
+
+    add_frame = ttk.Frame(frame)
+    add_frame.pack(fill=tk.X, pady=(8, 0))
+
+    new_app_var = tk.StringVar()
+    new_entry = ttk.Entry(add_frame, textvariable=new_app_var, font=("", FS_SM))
+    new_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+
+    def _add() -> None:
+        name = new_app_var.get().strip()
+        if name and name not in apps_listbox.get(0, tk.END):
+            apps_listbox.insert(tk.END, name)
+            new_app_var.set("")
+        new_entry.focus_set()
+
+    def _remove() -> None:
+        sel = apps_listbox.curselection()
+        if sel:
+            apps_listbox.delete(sel[0])
+
+    ttk.Button(add_frame, text="Add", command=_add).pack(side=tk.LEFT)
+    ttk.Button(frame, text="Remove Selected", command=_remove).pack(anchor=tk.W, pady=(4, 0))
+
+    btn_frame = ttk.Frame(frame)
+    btn_frame.pack(fill=tk.X, pady=(16, 0))
+
+    def _save() -> None:
+        result[0] = {
+            "enabled": enabled_var.get(),
+            "apps": list(apps_listbox.get(0, tk.END)),
+        }
+        root.quit()
+
+    def _cancel() -> None:
+        root.quit()
+
+    ttk.Button(btn_frame, text="Cancel", command=_cancel).pack(side=tk.LEFT, padx=6)
+    ttk.Button(btn_frame, text="Save", command=_save).pack(side=tk.RIGHT, padx=6)
+
+    new_entry.bind("<Return>", lambda _: _add())
+    root.protocol("WM_DELETE_WINDOW", _cancel)
+    root.bind("<Escape>", lambda _: _cancel())
+
+    root.mainloop()
+    root.destroy()
+    return result[0]
