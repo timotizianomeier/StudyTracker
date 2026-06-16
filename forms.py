@@ -125,17 +125,17 @@ def _build_duration_picker(
 
 # ─── Start-session window (slider + Play button) ──────────────────────────────
 
-def show_start_window(current_minutes: int) -> int | None:
+def show_start_window(current_minutes: int) -> dict | None:
     """
     Duration picker shown when the user clicks Start Session.
-    Returns the chosen duration (int) or None if cancelled.
+    Returns {"minutes": int, "disable_interrupts": bool}, or None if cancelled.
     """
-    result: list[int | None] = [None]
+    result: list[dict | None] = [None]
 
     root = tk.Tk()
     root.withdraw()
     root.title("Start Session")
-    root.geometry("360x230")
+    root.geometry("360x260")
     root.resizable(False, False)
     _theme(root)
     _bring_to_front(root)
@@ -145,8 +145,17 @@ def show_start_window(current_minutes: int) -> int | None:
 
     dur_var = _build_duration_picker(frame, current_minutes)
 
+    disable_interrupts_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(
+        frame, text="Disable interrupts for this session",
+        variable=disable_interrupts_var,
+    ).pack(anchor=tk.W, pady=(8, 0))
+
     def _start() -> None:
-        result[0] = int(round(dur_var.get()))
+        result[0] = {
+            "minutes": int(round(dur_var.get())),
+            "disable_interrupts": disable_interrupts_var.get(),
+        }
         root.quit()
 
     def _cancel() -> None:

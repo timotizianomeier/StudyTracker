@@ -70,9 +70,11 @@ class PomodoroApp(rumps.App):
         self.show_clock:      bool = True
         self._timer_thread: threading.Thread | None = None
         self._done_queue:  queue.Queue[int] = queue.Queue()
-        self._start_queue: queue.Queue[int] = queue.Queue()
+        self._start_queue: queue.Queue[dict] = queue.Queue()
         self._session_start_time: datetime | None = None
         self.sound_on:    bool = True
+        self.interrupts_on: bool = True
+        self._session_interrupts_disabled: bool = False
         self._distractions: list[str] = []
         self._app_warning_showing: bool = False
         self._app_blocker_observers: list = []
@@ -98,8 +100,8 @@ class PomodoroApp(rumps.App):
         self._stop_item   = rumps.MenuItem("⏹  Stop Session")
         self._clock_item  = rumps.MenuItem("✓  Show countdown", callback=self._toggle_clock)
         self._sound_item  = rumps.MenuItem("✓  Play sound",     callback=self._toggle_sound)
-        self._config_item        = rumps.MenuItem("⚙  Configure…",     callback=self._configure)
-        self._app_blocker_item   = rumps.MenuItem("🚫  App Blocker…",  callback=self._configure_app_blocker)
+        self._interrupts_item = rumps.MenuItem("✓  Interrupts", callback=self._toggle_interrupts)
+        self._config_item        = rumps.MenuItem("⚙  Configuration")
         self._distract_item      = rumps.MenuItem("💭  Record Distraction")
         self._hist_item     = rumps.MenuItem("📋  View History",       callback=self._view_history)
         self._insights_item = rumps.MenuItem("🔍  Insights (Beta)",   callback=self._view_insights)
@@ -113,6 +115,13 @@ class PomodoroApp(rumps.App):
             "🌿  5-4-3-2-1 Grounding", callback=self._grounding_exercise
         )
 
+        self._config_item["duration"] = rumps.MenuItem(
+            "⏱  Session Duration…", callback=self._configure
+        )
+        self._config_item["app_blocker"] = rumps.MenuItem(
+            "🚫  App Blocker…", callback=self._configure_app_blocker
+        )
+
         self.menu = [
             self._status_item,
             None,
@@ -123,12 +132,12 @@ class PomodoroApp(rumps.App):
             None,
             self._clock_item,
             self._sound_item,
+            self._interrupts_item,
             self._hist_item,
             self._insights_item,
             self._meditate_item,
             None,
             self._config_item,
-            self._app_blocker_item,
             None,
             self._quit_item,
         ]
@@ -220,8 +229,9 @@ class PomodoroApp(rumps.App):
 
         # Handle a pending start request (duration chosen in the picker window)
         if not self.is_running and not self._start_queue.empty():
-            duration = self._start_queue.get_nowait()
-            self.session_minutes = duration
+            start_data = self._start_queue.get_nowait()
+            self.session_minutes = start_data["minutes"]
+            self._session_interrupts_disabled = start_data.get("disable_interrupts", False)
             self.is_paused = False
             self._distractions.clear()
             self._session_start_time = datetime.now()
@@ -403,6 +413,7 @@ class PomodoroApp(rumps.App):
         elapsed_seconds = self.session_minutes * 60 - self.time_remaining
         self.is_running = False
         self.is_paused = False
+        self._session_interrupts_disabled = False
         self._was_running_at_lock = False
         self._defer_until_unlock = False
         self._session_finished_while_locked = False
@@ -466,7 +477,9 @@ class PomodoroApp(rumps.App):
         try:
             from AppKit import NSWorkspace
             import config as _cfg
-            if not _cfg.is_app_blocking_enabled():
+            if (not self.interrupts_on
+                    or self._session_interrupts_disabled
+                    or not _cfg.is_app_blocking_enabled()):
                 return
             blocked = set(_cfg.get_blocked_apps())
             for app in NSWorkspace.sharedWorkspace().runningApplications():
@@ -488,6 +501,8 @@ class PomodoroApp(rumps.App):
         if (not self.is_running
                 or self.is_paused
                 or self._app_warning_showing
+                or not self.interrupts_on
+                or self._session_interrupts_disabled
                 or not _cfg.is_app_blocking_enabled()):
             return
         if app_name not in set(_cfg.get_blocked_apps()):
@@ -518,6 +533,12 @@ class PomodoroApp(rumps.App):
         self.sound_on = not self.sound_on
         self._sound_item.title = (
             "✓  Play sound" if self.sound_on else "    Play sound"
+        )
+
+    def _toggle_interrupts(self, _: rumps.MenuItem) -> None:
+        self.interrupts_on = not self.interrupts_on
+        self._interrupts_item.title = (
+            "✓  Interrupts" if self.interrupts_on else "    Interrupts"
         )
 
     def _configure(self, _: rumps.MenuItem) -> None:
