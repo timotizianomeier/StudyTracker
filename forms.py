@@ -125,9 +125,12 @@ def _build_duration_picker(
 
 # ─── Start-session window (slider + Play button) ──────────────────────────────
 
-def show_start_window(current_minutes: int) -> dict | None:
+def show_start_window(current_minutes: int, interrupts_on: bool = True) -> dict | None:
     """
     Duration picker shown when the user clicks Start Session.
+    `interrupts_on` reflects the menu-bar dropdown's global "Interrupts" toggle,
+    so this window's checkbox stays in sync with it instead of always
+    defaulting to unchecked.
     Returns {"minutes": int, "disable_interrupts": bool}, or None if cancelled.
     """
     result: list[dict | None] = [None]
@@ -145,11 +148,16 @@ def show_start_window(current_minutes: int) -> dict | None:
 
     dur_var = _build_duration_picker(frame, current_minutes)
 
-    disable_interrupts_var = tk.BooleanVar(value=False)
-    ttk.Checkbutton(
+    disable_interrupts_var = tk.BooleanVar(value=not interrupts_on)
+    interrupts_check = ttk.Checkbutton(
         frame, text="Disable interrupts for this session",
         variable=disable_interrupts_var,
-    ).pack(anchor=tk.W, pady=(8, 0))
+    )
+    interrupts_check.pack(anchor=tk.W, pady=(8, 0))
+    if not interrupts_on:
+        # Already disabled globally via the menu-bar toggle - reflect that
+        # here instead of letting the user uncheck a box that has no effect.
+        interrupts_check.state(["disabled"])
 
     def _start() -> None:
         result[0] = {

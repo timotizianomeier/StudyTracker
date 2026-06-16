@@ -387,7 +387,7 @@ class PomodoroApp(rumps.App):
         # Open the duration-picker window in a background thread; the result
         # is picked up by _on_tick on the main thread to safely start the session.
         def _run() -> None:
-            result = _run_window("start_session", self.session_minutes)
+            result = _run_window("start_session", self.session_minutes, self.interrupts_on)
             if result is not None:
                 self._start_queue.put(result)
         threading.Thread(target=_run, daemon=True).start()

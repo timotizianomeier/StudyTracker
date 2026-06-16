@@ -40,8 +40,9 @@ def main() -> None:
 
     if window == "start_session":
         current = int(sys.argv[2]) if len(sys.argv) > 2 else 25
+        interrupts_on = sys.argv[3] != "False" if len(sys.argv) > 3 else True
         from forms import show_start_window
-        result = show_start_window(current)
+        result = show_start_window(current, interrupts_on)
         if result is not None:
             print(json.dumps(result), flush=True)
 
