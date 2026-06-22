@@ -232,6 +232,8 @@ class PomodoroApp(rumps.App):
             start_data = self._start_queue.get_nowait()
             self.session_minutes = start_data["minutes"]
             self._session_interrupts_disabled = start_data.get("disable_interrupts", False)
+            if self._session_interrupts_disabled:
+                self._interrupts_item.title = "    Interrupts"
             self.is_paused = False
             self._distractions.clear()
             self._session_start_time = datetime.now()
@@ -378,6 +380,10 @@ class PomodoroApp(rumps.App):
             self._distract_item.set_callback(None)
             self._pause_item.title = "⏸  Pause Session"
             self._status_item.title = "No session running"
+            self._session_interrupts_disabled = False
+            self._interrupts_item.title = (
+                "✓  Interrupts" if self.interrupts_on else "    Interrupts"
+            )
 
     # ── Menu callbacks ────────────────────────────────────────────────────────
 
@@ -413,7 +419,6 @@ class PomodoroApp(rumps.App):
         elapsed_seconds = self.session_minutes * 60 - self.time_remaining
         self.is_running = False
         self.is_paused = False
-        self._session_interrupts_disabled = False
         self._was_running_at_lock = False
         self._defer_until_unlock = False
         self._session_finished_while_locked = False
