@@ -78,6 +78,7 @@ class PomodoroApp(rumps.App):
         self._distractions: list[str] = []
         self._app_warning_showing: bool = False
         self._app_blocker_observers: list = []
+        self._allow_quit: bool = False   # set by the Quit menu item
 
         # Screen-lock state
         self._lock_time: datetime | None = None
@@ -105,7 +106,7 @@ class PomodoroApp(rumps.App):
         self._distract_item      = rumps.MenuItem("💭  Record Distraction")
         self._hist_item     = rumps.MenuItem("📋  View History",       callback=self._view_history)
         self._insights_item = rumps.MenuItem("🔍  Insights (Beta)",   callback=self._view_insights)
-        self._quit_item     = rumps.MenuItem("Quit",                   callback=rumps.quit_application)
+        self._quit_item     = rumps.MenuItem("Quit",                   callback=self._quit_app)
 
         self._meditate_item = rumps.MenuItem("🧘  Meditate")
         self._meditate_item["breathing"] = rumps.MenuItem(
@@ -148,6 +149,7 @@ class PomodoroApp(rumps.App):
         db.init_db()
         self._setup_screen_lock_detection()
         self._setup_app_blocker_observers()
+        self._install_shutdown_guard()
 
     # ── Internal timer ────────────────────────────────────────────────────────
 
@@ -444,6 +446,55 @@ class PomodoroApp(rumps.App):
                         term=result.get("term"),
                     )
             threading.Thread(target=_show_form, daemon=True).start()
+
+    # ── Shutdown guard ────────────────────────────────────────────────────────
+
+    def _install_shutdown_guard(self) -> None:
+        """Refuse app termination while a session is running.
+
+        During shutdown / restart / logout, macOS asks every app to quit.
+        Returning NSTerminateCancel from applicationShouldTerminate: makes
+        loginwindow abort the whole sequence, so a running session blocks the
+        shutdown.  The Quit menu item sets _allow_quit first, so quitting the
+        app deliberately still works.  rumps's delegate class does not define
+        applicationShouldTerminate:, so it is added here at runtime.
+        """
+        try:
+            import objc
+            from rumps.rumps import NSApp as _RumpsDelegate
+
+            app = self
+
+            def _should_terminate(_objc_self, _sender) -> int:
+                if app.is_running and not app._allow_quit:
+                    try:
+                        rumps.notification(
+                            title="🍅 Pomodoro Tracker",
+                            subtitle="Shutdown blocked",
+                            message="A session is still running — stop it "
+                                    "(or quit the app) before shutting down.",
+                            sound=False,
+                        )
+                    except Exception:
+                        pass
+                    return 0   # NSTerminateCancel
+                return 1       # NSTerminateNow
+
+            objc.classAddMethod(
+                _RumpsDelegate,
+                b"applicationShouldTerminate:",
+                objc.selector(
+                    _should_terminate,
+                    selector=b"applicationShouldTerminate:",
+                    signature=b"Q@:@",   # NSUInteger (self, _cmd, sender)
+                ),
+            )
+        except Exception:
+            pass  # PyObjC unavailable; shutdown guard disabled
+
+    def _quit_app(self, sender: rumps.MenuItem) -> None:
+        self._allow_quit = True
+        rumps.quit_application(sender)
 
     # ── App blocker ───────────────────────────────────────────────────────────
 

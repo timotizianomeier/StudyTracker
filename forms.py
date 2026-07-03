@@ -29,6 +29,46 @@ FS_LG = 24   # large numbers (focus rating, duration picker)
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
+def _wheel_steps(event: "tk.Event") -> int:
+    """Convert a <MouseWheel> delta into scroll units.
+
+    macOS trackpads report small per-event deltas (±1…±10, velocity-scaled);
+    classic mice report multiples of ±120.  Dividing by a fixed 30 truncates
+    the trackpad case to 0, so normalise both explicitly.
+    """
+    d = event.delta
+    if abs(d) >= 120:
+        d = int(d / 120)
+    return -int(d)
+
+
+def _bind_wheel_yscroll(widget) -> None:
+    """Make trackpad / mouse-wheel scrolling work on a vertically scrolling widget."""
+    def _on_wheel(e: "tk.Event") -> str:
+        steps = _wheel_steps(e)
+        if steps:
+            widget.yview_scroll(steps, "units")
+        return "break"
+    widget.bind("<MouseWheel>", _on_wheel)
+
+
+def _bind_canvas_hscroll(canvas: tk.Canvas) -> None:
+    """Make trackpad / mouse-wheel scrolling work on a horizontally scrolling canvas.
+
+    Both vertical and horizontal swipes pan the chart; on macOS a horizontal
+    swipe arrives as <Shift-MouseWheel>.  xscrollincrement keeps each step
+    small so trackpad event streams feel smooth.
+    """
+    canvas.configure(xscrollincrement=12)
+    def _on_wheel(e: "tk.Event") -> str:
+        steps = _wheel_steps(e)
+        if steps:
+            canvas.xview_scroll(steps, "units")
+        return "break"
+    canvas.bind("<MouseWheel>", _on_wheel)
+    canvas.bind("<Shift-MouseWheel>", _on_wheel)
+
+
 def _center_window(root: tk.Tk) -> None:
     """Position the window in the center of the screen."""
     root.update_idletasks()
@@ -711,8 +751,7 @@ def show_history_window() -> None:
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
         tree.pack(fill=tk.BOTH, expand=True)
-        tree.bind("<MouseWheel>",
-                  lambda e: tree.yview_scroll(int(-1 * (e.delta / 30)), "units"))
+        _bind_wheel_yscroll(tree)
 
         tree.tag_configure("even", background=C_ROW_EVEN, foreground="#000000")
         tree.tag_configure("odd",  background=C_ROW_ODD,  foreground="#000000")
@@ -883,8 +922,7 @@ def show_history_window() -> None:
             _hsb.config(command=cv.xview)
             cv.configure(scrollregion=(0, 0, _canvas_w, _canvas_h))
             cv.after(150, lambda: cv.xview_moveto(1.0))
-            cv.bind("<MouseWheel>",
-                    lambda e: cv.xview_scroll(int(-1 * (e.delta / 30)), "units"))
+            _bind_canvas_hscroll(cv)
 
             _n_ticks = int(_y_max / 0.5) + 1
             for _i in range(_n_ticks):
@@ -932,8 +970,10 @@ def show_history_window() -> None:
                 cv.create_text(_cx, _yc - 2,
                                text=f"{_th:.1f}h" if _th >= 0.1 else f"{_total_m}m",
                                anchor="s", font=("", 11, "bold"), fill="#222")
-                cv.create_text(_x0 + BW // 2, MT + CH + 5, text=_day[5:],
-                               anchor="nw", font=("", 10), fill="#555", angle=45)
+                # angle rotates counterclockwise; NE anchor makes the label
+                # slant down-left below the axis instead of up into the bars
+                cv.create_text(_x0 + BW // 2, MT + CH + 6, text=_day[5:],
+                               anchor="ne", font=("", 10), fill="#555", angle=45)
 
     term_var.trace_add("write", _rebuild)
     _rebuild()
@@ -1082,8 +1122,7 @@ def show_insights_window() -> None:
             w_tree.configure(yscrollcommand=w_vsb.set)
             w_vsb.pack(side=tk.RIGHT, fill=tk.Y)
             w_tree.pack(fill=tk.BOTH, expand=True)
-            w_tree.bind("<MouseWheel>",
-                        lambda e: w_tree.yview_scroll(int(-1 * (e.delta / 30)), "units"))
+            _bind_wheel_yscroll(w_tree)
 
             w_style = ttk.Style(root)
             w_style.configure("Treeview", foreground="#000000", background="#ffffff",
@@ -1167,8 +1206,7 @@ def show_insights_window() -> None:
             cv_hour.pack(fill=tk.BOTH, expand=True)
             h_hsb.config(command=cv_hour.xview)
             cv_hour.configure(scrollregion=(0, 0, h_canvas_w, h_canvas_h))
-            cv_hour.bind("<MouseWheel>",
-                         lambda e: cv_hour.xview_scroll(int(-1 * (e.delta / 30)), "units"))
+            _bind_canvas_hscroll(cv_hour)
 
             for i in range(int(h_y_max / 10) + 1):
                 pct = i * 10
@@ -1280,8 +1318,7 @@ def show_insights_window() -> None:
             cv_daily.pack(fill=tk.BOTH, expand=True)
             d_hsb.config(command=cv_daily.xview)
             cv_daily.configure(scrollregion=(0, 0, d_canvas_w, d_canvas_h))
-            cv_daily.bind("<MouseWheel>",
-                          lambda e: cv_daily.xview_scroll(int(-1 * (e.delta / 30)), "units"))
+            _bind_canvas_hscroll(cv_daily)
 
             for i in range(6):
                 pct = i * 20
@@ -1311,8 +1348,8 @@ def show_insights_window() -> None:
                                      anchor="s", font=("", 10, "bold"), fill=DIST_CLR_D)
                 d_obj = datetime.date.fromisoformat(day)
                 lbl = d_obj.strftime("%a\n%-d")
-                cv_daily.create_text(cx, D_MT + D_CH + 5, text=lbl,
-                                     anchor="nw", font=("", 9), fill="#555", angle=45)
+                cv_daily.create_text(cx, D_MT + D_CH + 6, text=lbl,
+                                     anchor="ne", font=("", 9), fill="#555", angle=45)
             cv_daily.after(150, lambda: cv_daily.xview_moveto(1.0))
 
         # ── Tab 4: Weekly Trend ───────────────────────────────────────────────
@@ -1356,8 +1393,7 @@ def show_insights_window() -> None:
             cv_trend.pack(fill=tk.BOTH, expand=True)
             t_hsb.config(command=cv_trend.xview)
             cv_trend.configure(scrollregion=(0, 0, t_canvas_w, t_canvas_h))
-            cv_trend.bind("<MouseWheel>",
-                          lambda e: cv_trend.xview_scroll(int(-1 * (e.delta / 30)), "units"))
+            _bind_canvas_hscroll(cv_trend)
 
             for i in range(6):
                 pct = i * 20
@@ -1385,8 +1421,8 @@ def show_insights_window() -> None:
                                      fill=DIST_CLR_T, outline="white", width=2)
                 cv_trend.create_text(cx, cy - DOT_R - 4, text=f"{rate:.0f}%",
                                      anchor="s", font=("", 10, "bold"), fill=DIST_CLR_T)
-                cv_trend.create_text(cx, T_MT + T_CH + 5, text=week[5:],
-                                     anchor="nw", font=("", 9), fill="#555", angle=45)
+                cv_trend.create_text(cx, T_MT + T_CH + 6, text=week[5:],
+                                     anchor="ne", font=("", 9), fill="#555", angle=45)
             cv_trend.after(150, lambda: cv_trend.xview_moveto(1.0))
 
         # ── Tab 5: Focus vs Study Time (scatter + regression) ────────────────
