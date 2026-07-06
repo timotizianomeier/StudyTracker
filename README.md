@@ -19,6 +19,8 @@ A macOS menu bar app for tracking focused work sessions. Built with Python, it l
 - **Mid-session distraction logging** — record what distracted you in the moment; entries are shown in the post-session form so you can reflect on them
 - **Screen-lock awareness** — if your screen locks mid-session, you're asked on unlock whether you took a break or kept working; the timer adjusts accordingly
 - **App Blocker** — automatically quits distracting apps when a session starts, and closes any that are opened mid-session (see [App Blocker](#app-blocker))
+- **Interrupts toggle** — switch app-blocker interruptions off globally from the menu, or just for one session via a checkbox in the start dialog
+- **Shutdown guard** — macOS shutdown, restart, or logout is blocked while a session is running; stop the session (or quit the app) first
 - **Session history** with a full log table and summary statistics:
   - Average focus by time of day (morning / afternoon / evening / night)
   - Average focus by topic and by term
@@ -79,15 +81,15 @@ The SQLite database is created automatically at `~/.pomodoro_tracker.db` on firs
 
 | Menu item | What it does |
 |---|---|
-| `▶ Start Session` | Opens a duration picker, then starts the countdown |
+| `▶ Start Session` | Opens a duration picker (with a "Disable interrupts for this session" checkbox), then starts the countdown |
 | `⏸ Pause Session` | Freezes the timer; label changes to `▶ Resume Session` |
 | `▶ Resume Session` | Resumes a paused session |
 | `⏹ Stop Session` | Cancels the session (asks to log it if ≥ 5 minutes elapsed) |
 | `💭 Record Distraction` | Log what just distracted you mid-session; replayed in the post-session form |
 | `✓ Show countdown` | Toggles the clock display; when off, only the icon is shown |
 | `🔇 / 🔊 Play sound` | Toggles the completion sound |
-| `⚙ Configure…` | Slider to set session length (5–55 min) |
-| `🚫 App Blocker…` | Configure which apps to block during sessions |
+| `✓ Interrupts` | Globally toggles app-blocker interruptions on/off |
+| `⚙ Configuration ▶` | Submenu: `⏱ Session Duration…` (5–55 min slider) and `🚫 App Blocker…` |
 | `📋 View History` | Full session log, statistics, and daily chart |
 | `🔍 Insights (Beta)` | Distraction analytics window |
 | `🧘 Meditate ▶` | Submenu with two guided meditations (available any time) |
@@ -124,7 +126,9 @@ The app blocker helps keep distracting apps off your screen during focus session
 - **On session start** — any blocked apps that are already running are quit automatically (gracefully, as if you quit them yourself).
 - **Mid-session** — if a blocked app is opened or brought to the front, it is immediately quit and a brief popup confirms this.
 
-**To configure:** Click `🚫 App Blocker…` in the menu. You can enable/disable the feature and add or remove apps from the list. App names must match exactly what macOS shows (the name as it appears in the Dock or Activity Monitor).
+**To configure:** Click `⚙ Configuration → 🚫 App Blocker…` in the menu. You can enable/disable the feature and add or remove apps from the list. App names must match exactly what macOS shows (the name as it appears in the Dock or Activity Monitor).
+
+**Turning interruptions off temporarily:** Untick `✓ Interrupts` in the menu to disable app blocking globally without touching your app list, or tick **Disable interrupts for this session** in the start dialog to skip blocking for a single session.
 
 > **Automation permission:** The first time the app blocker quits an app, macOS will show a prompt: *"python3 wants to control [App]."* Click **OK** to grant it. If you accidentally denied it, go to **System Settings → Privacy & Security → Automation** and enable it for Python.
 
@@ -165,9 +169,14 @@ pip install --break-system-packages -r requirements.txt
 
 ### App blocker doesn't close apps / nothing happens
 
-1. Check that app blocking is enabled: `🚫 App Blocker…` → **Enable app blocking warnings** should be ticked.
-2. Verify the app name matches exactly — open Activity Monitor, find the app, and use the name shown there.
-3. Grant Automation permission: **System Settings → Privacy & Security → Automation** → enable entries under Python.
+1. Check that app blocking is enabled: `⚙ Configuration → 🚫 App Blocker…` → **Enable app blocking warnings** should be ticked.
+2. Check that `✓ Interrupts` is ticked in the menu, and that you didn't tick **Disable interrupts for this session** when starting the session.
+3. Verify the app name matches exactly — open Activity Monitor, find the app, and use the name shown there.
+4. Grant Automation permission: **System Settings → Privacy & Security → Automation** → enable entries under Python.
+
+### My Mac won't shut down / restart
+
+A running session blocks shutdown, restart, and logout by design (you'll get a "Shutdown blocked" notification). Stop the session or quit the app via its `Quit` menu item, then shut down.
 
 ### Notifications don't appear
 
