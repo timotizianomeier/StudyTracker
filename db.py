@@ -40,6 +40,15 @@ def init_db() -> None:
                 term       TEXT
             )
         """)
+        # Per-day schedule-goal bookkeeping: late-work reasons and whether the
+        # morning greeting has already been shown for a given day.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS day_log (
+                date               TEXT PRIMARY KEY,
+                over_cutoff_reason TEXT,
+                greeted            INTEGER NOT NULL DEFAULT 0
+            )
+        """)
 
 
 def save_session(
@@ -401,3 +410,72 @@ def get_summary(term: str | None = None) -> dict:
             WHERE 1=1 {tc}
         """, tp).fetchone()
         return dict(row) if row else {}
+
+
+# ── Schedule-goal bookkeeping ───────────────────────────────────────────────
+
+def get_daily_schedule_bounds() -> list[sqlite3.Row]:
+    """Per-day (day, first_start, last_end) for every day with sessions.
+
+    Days are bucketed by the *start* of each session so a block that runs past
+    midnight still counts toward the day it began on.  Ordered oldest → newest.
+    """
+    with _connect() as conn:
+        return conn.execute("""
+            SELECT
+                DATE(start_time) AS day,
+                MIN(start_time)  AS first_start,
+                MAX(timestamp)   AS last_end
+            FROM sessions
+            WHERE start_time IS NOT NULL
+            GROUP BY day
+            ORDER BY day ASC
+        """).fetchall()
+
+
+def was_greeted(date_str: str) -> bool:
+    """True if the morning greeting has already been shown for the given day."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT greeted FROM day_log WHERE date = ?", (date_str,)
+        ).fetchone()
+    return bool(row and row["greeted"])
+
+
+def mark_greeted(date_str: str) -> None:
+    """Record that the morning greeting has been shown for the given day."""
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO day_log (date, greeted) VALUES (?, 1)
+               ON CONFLICT(date) DO UPDATE SET greeted = 1""",
+            (date_str,),
+        )
+
+
+def has_over_cutoff_reason(date_str: str) -> bool:
+    """True if a late-work reason has already been logged for the given day."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT over_cutoff_reason FROM day_log WHERE date = ?", (date_str,)
+        ).fetchone()
+    return bool(row and row["over_cutoff_reason"])
+
+
+def mark_over_cutoff(date_str: str, reason: str | None) -> None:
+    """Store the explanation for working past the daily cutoff on the given day."""
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO day_log (date, over_cutoff_reason) VALUES (?, ?)
+               ON CONFLICT(date) DO UPDATE SET over_cutoff_reason = excluded.over_cutoff_reason""",
+            (date_str, reason or None),
+        )
+
+
+def get_over_cutoff_reasons() -> list[sqlite3.Row]:
+    """All logged late-work reasons (date, reason), most recent first."""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT date, over_cutoff_reason FROM day_log "
+            "WHERE over_cutoff_reason IS NOT NULL AND over_cutoff_reason != '' "
+            "ORDER BY date DESC"
+        ).fetchall()

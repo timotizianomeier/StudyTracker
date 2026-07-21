@@ -63,8 +63,11 @@ def main() -> None:
     elif window == "session_form":
         duration = int(sys.argv[2])
         distractions = json.loads(sys.argv[3]) if len(sys.argv) > 3 else []
+        late_cutoff = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None
         from forms import show_session_form
-        result = show_session_form(duration, distractions=distractions)
+        result = show_session_form(
+            duration, distractions=distractions, late_cutoff=late_cutoff
+        )
         if result is not None:
             print(json.dumps(result), flush=True)
 
@@ -98,6 +101,21 @@ def main() -> None:
     elif window == "app_blocker_settings":
         from forms import show_app_blocker_settings
         result = show_app_blocker_settings()
+        if result is not None:
+            print(json.dumps(result), flush=True)
+
+    elif window == "schedule_greeting":
+        payload = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+        from forms import show_schedule_greeting
+        show_schedule_greeting(
+            met=bool(payload.get("met")),
+            headline=payload.get("headline", ""),
+            detail=payload.get("detail", ""),
+        )
+
+    elif window == "schedule_settings":
+        from forms import show_schedule_settings
+        result = show_schedule_settings()
         if result is not None:
             print(json.dumps(result), flush=True)
 

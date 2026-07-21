@@ -122,6 +122,9 @@ class PomodoroApp(rumps.App):
         self._config_item["app_blocker"] = rumps.MenuItem(
             "🚫  App Blocker…", callback=self._configure_app_blocker
         )
+        self._config_item["schedule"] = rumps.MenuItem(
+            "🎯  Schedule Goals…", callback=self._configure_schedule
+        )
 
         self.menu = [
             self._status_item,
@@ -194,19 +197,11 @@ class PomodoroApp(rumps.App):
                     self._set_running(False)
                     session_start = self._session_start_time
                     distractions_copy = list(self._distractions)
-                    def _show_form_kept(d=finished_dur, ss=session_start, dc=distractions_copy) -> None:
-                        form_result = _run_window("session_form", d, json.dumps(dc))
-                        if form_result:
-                            db.save_session(
-                                d,
-                                form_result["focus"],
-                                form_result.get("topic"),
-                                form_result["distracted"],
-                                form_result.get("reason"),
-                                start_time=ss,
-                                term=form_result.get("term"),
-                            )
-                    threading.Thread(target=_show_form_kept, daemon=True).start()
+                    threading.Thread(
+                        target=self._run_session_form,
+                        args=(finished_dur, session_start, distractions_copy),
+                        daemon=True,
+                    ).start()
                 # else: timer still running — it kept counting, just continue
             else:
                 # User was on a break — restore timer to the moment they left
@@ -274,19 +269,48 @@ class PomodoroApp(rumps.App):
                 # stays free (session is over so there's nothing else to tick).
                 session_start = self._session_start_time
                 distractions_copy = list(self._distractions)
-                def _show_form(d=duration, ss=session_start, dc=distractions_copy) -> None:
-                    result = _run_window("session_form", d, json.dumps(dc))
-                    if result:
-                        db.save_session(
-                            d,
-                            result["focus"],
-                            result.get("topic"),
-                            result["distracted"],
-                            result.get("reason"),
-                            start_time=ss,
-                            term=result.get("term"),
-                        )
-                threading.Thread(target=_show_form, daemon=True).start()
+                threading.Thread(
+                    target=self._run_session_form,
+                    args=(duration, session_start, distractions_copy),
+                    daemon=True,
+                ).start()
+
+    # ── Session logging ─────────────────────────────────────────────────────────
+
+    def _run_session_form(self, duration: int, session_start, distractions: list[str]) -> None:
+        """Show the post-session form and persist the result.
+
+        Also handles the daily-cutoff goal: if the session ended past the
+        configured cutoff (and no reason is logged yet today), the form shows a
+        "why still working late?" box and the answer is stored in ``day_log``.
+        Runs on a background thread; the session is already over.
+        """
+        import schedule_goals
+        end_dt = datetime.now()
+        try:
+            late_cutoff = schedule_goals.late_cutoff_if_past(end_dt)
+        except Exception:
+            late_cutoff = None
+
+        result = _run_window(
+            "session_form", duration, json.dumps(distractions), late_cutoff or ""
+        )
+        if not result:
+            return
+        db.save_session(
+            duration,
+            result["focus"],
+            result.get("topic"),
+            result["distracted"],
+            result.get("reason"),
+            start_time=session_start,
+            term=result.get("term"),
+        )
+        if late_cutoff and result.get("late_reason"):
+            try:
+                db.mark_over_cutoff(end_dt.date().isoformat(), result["late_reason"])
+            except Exception:
+                pass
 
     # ── Notification ──────────────────────────────────────────────────────────
 
@@ -395,10 +419,26 @@ class PomodoroApp(rumps.App):
         # Open the duration-picker window in a background thread; the result
         # is picked up by _on_tick on the main thread to safely start the session.
         def _run() -> None:
+            self._maybe_show_morning_greeting()
             result = _run_window("start_session", self.session_minutes, self.interrupts_on)
             if result is not None:
                 self._start_queue.put(result)
         threading.Thread(target=_run, daemon=True).start()
+
+    def _maybe_show_morning_greeting(self) -> None:
+        """On the first session start of a new day, reflect on the previous
+        active study day with a congratulatory or encouraging message."""
+        import schedule_goals
+        try:
+            today = datetime.now().date()
+            if db.was_greeted(today.isoformat()):
+                return
+            greeting = schedule_goals.evaluate_previous_day(today)
+            db.mark_greeted(today.isoformat())
+            if greeting is not None:
+                _run_window("schedule_greeting", json.dumps(greeting))
+        except Exception:
+            pass  # a greeting is never worth blocking a session over
 
     def _record_distraction(self, _: rumps.MenuItem) -> None:
         if not self.is_running:
@@ -433,19 +473,11 @@ class PomodoroApp(rumps.App):
             elapsed_minutes = max(1, round(elapsed_seconds / 60))
             session_start = self._session_start_time
             distractions_copy = list(self._distractions)
-            def _show_form(em=elapsed_minutes, ss=session_start, dc=distractions_copy) -> None:
-                result = _run_window("session_form", em, json.dumps(dc))
-                if result:
-                    db.save_session(
-                        em,
-                        result["focus"],
-                        result.get("topic"),
-                        result["distracted"],
-                        result.get("reason"),
-                        start_time=ss,
-                        term=result.get("term"),
-                    )
-            threading.Thread(target=_show_form, daemon=True).start()
+            threading.Thread(
+                target=self._run_session_form,
+                args=(elapsed_minutes, session_start, distractions_copy),
+                daemon=True,
+            ).start()
 
     # ── Shutdown guard ────────────────────────────────────────────────────────
 
@@ -576,6 +608,12 @@ class PomodoroApp(rumps.App):
             if result is not None:
                 _cfg.save_app_blocking_settings(result["enabled"], result["apps"])
         threading.Thread(target=_run, daemon=True).start()
+
+    def _configure_schedule(self, _: rumps.MenuItem) -> None:
+        # The window persists the new goals itself via config.save_schedule_goals.
+        threading.Thread(
+            target=lambda: _run_window("schedule_settings"), daemon=True
+        ).start()
 
     def _toggle_clock(self, _: rumps.MenuItem) -> None:
         self.show_clock = not self.show_clock

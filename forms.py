@@ -385,10 +385,18 @@ def show_distraction_input() -> str | None:
 
 # ─── Post-session feedback form ───────────────────────────────────────────────
 
-def show_session_form(duration_minutes: int, distractions: list[str] | None = None) -> dict | None:
+def show_session_form(
+    duration_minutes: int,
+    distractions: list[str] | None = None,
+    late_cutoff: str | None = None,
+) -> dict | None:
     """
     Modal form shown after each session ends.
-    Returns dict {focus, topic, distracted, reason} or None if skipped.
+    Returns dict {focus, topic, distracted, reason, late_reason} or None if skipped.
+
+    If ``late_cutoff`` (an "HH:MM" string) is given, the session ended past the
+    daily cutoff and an extra "why still working late?" box is shown; its text
+    is returned under ``late_reason``.
     """
     result: list[dict | None] = [None]
 
@@ -625,6 +633,31 @@ def show_session_form(duration_minutes: int, distractions: list[str] | None = No
 
     distracted_var.trace_add("write", _toggle_reason)
 
+    # ── Working late (past the daily cutoff) ──────────────────────────────────
+    late_text = None
+    if late_cutoff:
+        late_frame = tk.Frame(frame, bg="#fdecea", relief="flat", bd=0)
+        late_frame.pack(fill=tk.X, pady=(12, 0))
+        late_inner = tk.Frame(late_frame, bg="#fdecea")
+        late_inner.pack(fill=tk.X, padx=10, pady=8)
+        tk.Label(
+            late_inner,
+            text=f"🌙  It's past {late_cutoff} — what kept you working late?",
+            bg="#fdecea", fg="#c0392b", font=("", FS_SM, "bold"),
+            wraplength=400, justify=tk.LEFT,
+        ).pack(anchor=tk.W)
+        tk.Label(
+            late_inner,
+            text="A quick note now helps you spot patterns later. (Optional)",
+            bg="#fdecea", fg="#a04a3d", font=("", FS_XS),
+            wraplength=400, justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 6))
+        late_text = tk.Text(
+            late_inner, height=3, font=("", FS_SM), wrap=tk.WORD,
+            relief="solid", borderwidth=1,
+        )
+        late_text.pack(fill=tk.X)
+
     # ── Buttons ───────────────────────────────────────────────────────────────
     btn_frame = ttk.Frame(frame)
     btn_frame.pack(fill=tk.X, pady=(16, 0))
@@ -652,6 +685,11 @@ def show_session_form(duration_minutes: int, distractions: list[str] | None = No
             "reason": (
                 reason_text.get("1.0", tk.END).strip() or None
                 if distracted_var.get()
+                else None
+            ),
+            "late_reason": (
+                late_text.get("1.0", tk.END).strip() or None
+                if late_text is not None
                 else None
             ),
         }
@@ -2096,6 +2134,150 @@ def show_app_blocker_settings() -> dict | None:
     root.protocol("WM_DELETE_WINDOW", _cancel)
     root.bind("<Escape>", lambda _: _cancel())
 
+    root.mainloop()
+    root.destroy()
+    return result[0]
+
+
+# ─── Schedule goals: morning greeting ─────────────────────────────────────────
+
+def show_schedule_greeting(met: bool, headline: str, detail: str) -> None:
+    """Output-only modal shown on the first session start of a new day.
+
+    ``met`` picks the celebratory vs. encouraging styling; ``headline`` and
+    ``detail`` are pre-composed by the caller (which owns the schedule config).
+    """
+    root = tk.Tk()
+    root.withdraw()
+    root.title("Good morning!")
+    root.resizable(False, False)
+    _theme(root)
+
+    frame = ttk.Frame(root, padding=28)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    accent = "#2e7d32" if met else C_PRIMARY
+    emoji  = "🎉" if met else "💪"
+
+    ttk.Label(frame, text=emoji, font=("", 40)).pack(pady=(0, 6))
+    tk.Label(
+        frame, text=headline, font=("", FS_MD, "bold"),
+        fg=accent, wraplength=360, justify=tk.CENTER,
+    ).pack(pady=(0, 8))
+    ttk.Label(
+        frame, text=detail, font=("", FS_SM), foreground=C_MUTED,
+        wraplength=360, justify=tk.CENTER,
+    ).pack(pady=(0, 20))
+
+    def _dismiss() -> None:
+        root.quit()
+
+    ttk.Button(frame, text="Let's go →", command=_dismiss).pack()
+
+    root.protocol("WM_DELETE_WINDOW", _dismiss)
+    root.bind("<Return>", lambda _: _dismiss())
+    root.bind("<Escape>", lambda _: _dismiss())
+
+    _bring_to_front(root)
+    root.mainloop()
+    root.destroy()
+
+
+# ─── Schedule goals: settings window ──────────────────────────────────────────
+
+def show_schedule_settings() -> dict | None:
+    """
+    Settings window for the daily start/cutoff goals.
+    Returns {"start_by": "HH:MM", "end_by": "HH:MM"} or None if cancelled.
+    """
+    import config as _cfg
+
+    result: list[dict | None] = [None]
+
+    root = tk.Tk()
+    root.withdraw()
+    root.title("Schedule Goals")
+    root.resizable(False, False)
+    _theme(root)
+
+    frame = ttk.Frame(root, padding=24)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    ttk.Label(frame, text="🎯  Schedule Goals", font=("", FS_MD, "bold")).pack(pady=(0, 4))
+    ttk.Label(
+        frame,
+        text="Aim to start your day before the first time\nand wrap up by the second.",
+        font=("", FS_SM), foreground=C_MUTED, justify=tk.CENTER,
+    ).pack(pady=(0, 14))
+
+    def _split(hhmm: str) -> tuple[str, str]:
+        h, m = hhmm.split(":")
+        return h, m
+
+    sh, sm = _split(_cfg.get_start_by())
+    eh, em = _split(_cfg.get_end_by())
+
+    start_h = tk.StringVar(value=sh)
+    start_m = tk.StringVar(value=sm)
+    end_h   = tk.StringVar(value=eh)
+    end_m   = tk.StringVar(value=em)
+
+    def _time_row(label: str, hvar: tk.StringVar, mvar: tk.StringVar) -> None:
+        row = ttk.Frame(frame)
+        row.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(row, text=label, font=("", FS_SM), width=14).pack(side=tk.LEFT)
+        tk.Spinbox(
+            row, from_=0, to=23, wrap=True, width=3, format="%02.0f",
+            textvariable=hvar, font=("", FS_SM), justify=tk.CENTER,
+        ).pack(side=tk.LEFT)
+        ttk.Label(row, text=":", font=("", FS_SM)).pack(side=tk.LEFT, padx=2)
+        tk.Spinbox(
+            row, from_=0, to=59, wrap=True, width=3, format="%02.0f", increment=5,
+            textvariable=mvar, font=("", FS_SM), justify=tk.CENTER,
+        ).pack(side=tk.LEFT)
+
+    _time_row("Start work by", start_h, start_m)
+    _time_row("Finish work by", end_h, end_m)
+
+    error_lbl = ttk.Label(frame, text="", foreground="red", font=("", FS_XS))
+
+    def _norm(hvar: tk.StringVar, mvar: tk.StringVar) -> str | None:
+        try:
+            h, m = int(hvar.get()), int(mvar.get())
+        except ValueError:
+            return None
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return f"{h:02d}:{m:02d}"
+        return None
+
+    btn_frame = ttk.Frame(frame)
+    btn_frame.pack(fill=tk.X, pady=(14, 0))
+
+    def _save() -> None:
+        start_by = _norm(start_h, start_m)
+        end_by   = _norm(end_h, end_m)
+        if start_by is None or end_by is None:
+            error_lbl.config(text="⚠  Please enter valid times.")
+            error_lbl.pack(before=btn_frame, pady=(0, 6))
+            return
+        if end_by <= start_by:
+            error_lbl.config(text="⚠  Finish time must be after start time.")
+            error_lbl.pack(before=btn_frame, pady=(0, 6))
+            return
+        _cfg.save_schedule_goals(start_by, end_by)
+        result[0] = {"start_by": start_by, "end_by": end_by}
+        root.quit()
+
+    def _cancel() -> None:
+        root.quit()
+
+    ttk.Button(btn_frame, text="Cancel", command=_cancel).pack(side=tk.LEFT, padx=6)
+    ttk.Button(btn_frame, text="Save", command=_save).pack(side=tk.RIGHT, padx=6)
+
+    root.protocol("WM_DELETE_WINDOW", _cancel)
+    root.bind("<Escape>", lambda _: _cancel())
+
+    _bring_to_front(root)
     root.mainloop()
     root.destroy()
     return result[0]
