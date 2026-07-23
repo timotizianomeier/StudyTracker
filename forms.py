@@ -4,7 +4,7 @@ breathing exercise, and 5-4-3-2-1 grounding."""
 import datetime
 import math
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 import db
 
@@ -698,11 +698,26 @@ def show_session_form(
     def _skip() -> None:
         root.quit()
 
+    def _confirm_discard() -> None:
+        # Guard the accidental-discard paths (Escape / window close): a finished
+        # session is real study time, so require an explicit confirmation before
+        # throwing it away.  Default is "No" so a second stray keypress keeps it.
+        if messagebox.askyesno(
+            "Discard session?",
+            "This finished session hasn't been logged yet.\n\n"
+            "Discard it without saving?",
+            parent=root,
+            default=messagebox.NO,
+            icon=messagebox.WARNING,
+        ):
+            root.quit()
+        # otherwise stay in the form so the session can still be saved
+
     ttk.Button(btn_frame, text="Skip (don't log)", command=_skip).pack(side=tk.LEFT)
     ttk.Button(btn_frame, text="💾  Save Session", command=_submit).pack(side=tk.RIGHT)
 
-    root.protocol("WM_DELETE_WINDOW", _skip)
-    root.bind("<Escape>", lambda _: _skip())
+    root.protocol("WM_DELETE_WINDOW", _confirm_discard)
+    root.bind("<Escape>", lambda _: _confirm_discard())
 
     _resize_to_fit()
     _bring_to_front(root)
