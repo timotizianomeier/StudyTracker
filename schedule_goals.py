@@ -30,17 +30,36 @@ def late_cutoff_if_past(end_dt: datetime) -> str | None:
     return end_by
 
 
-def _day_met(row, start_by: str, end_by: str) -> bool:
-    """True if the given day's first start was before ``start_by`` and its last
-    session ended by ``end_by``."""
+def is_late_start(now: datetime) -> str | None:
+    """Return the start goal ("HH:MM") if ``now`` is past today's start goal and
+    no late-start reason has been logged yet for today; otherwise ``None``.
+    """
+    start_by = config.get_start_by()
+    sh, sm = _parse_hhmm(start_by)
+    if now.time() <= time(sh, sm):
+        return None
+    if db.has_late_start_reason(now.date().isoformat()):
+        return None
+    return start_by
+
+
+def _day_flags(row, start_by: str, end_by: str) -> tuple[bool, bool]:
+    """Return (started_early, finished_ontime) for a day-bounds row."""
     first_start = datetime.fromisoformat(row["first_start"])
     last_end    = datetime.fromisoformat(row["last_end"])
     sh, sm = _parse_hhmm(start_by)
     eh, em = _parse_hhmm(end_by)
     day = date.fromisoformat(row["day"])
 
-    started_early  = first_start.time() < time(sh, sm)
+    started_early   = first_start.time() < time(sh, sm)
     finished_ontime = last_end <= datetime.combine(day, time(eh, em))
+    return started_early, finished_ontime
+
+
+def _day_met(row, start_by: str, end_by: str) -> bool:
+    """True if the given day's first start was before ``start_by`` and its last
+    session ended by ``end_by``."""
+    started_early, finished_ontime = _day_flags(row, start_by, end_by)
     return started_early and finished_ontime
 
 
@@ -91,12 +110,29 @@ def evaluate_previous_day(today: date | None = None) -> dict | None:
         else:
             detail = "Kick today off the same way — start strong, finish on time."
     else:
+        started_early, finished_ontime = _day_flags(last, start_by, end_by)
         fs = datetime.fromisoformat(last["first_start"]).strftime("%H:%M")
         le = datetime.fromisoformat(last["last_end"]).strftime("%H:%M")
+        log = db.get_day_log(last["day"]) or {}
+
         headline = "Let's tighten up the schedule today."
-        detail = (
-            f"{when.capitalize()} you started at {fs} and wrapped at {le}. "
+        parts: list[str] = []
+        if not started_early:
+            s = f"{when.capitalize()} you started at {fs} (goal {start_by})."
+            reason = log.get("late_start_reason")
+            if reason:
+                s += f" You noted: “{reason}”"
+            parts.append(s)
+        if not finished_ontime:
+            lead = "You worked until" if parts else f"{when.capitalize()} you worked until"
+            s = f"{lead} {le} (goal {end_by})."
+            reason = log.get("over_cutoff_reason")
+            if reason:
+                s += f" You noted: “{reason}”"
+            parts.append(s)
+        parts.append(
             f"Aim to be underway before {start_by} and done by {end_by} today."
         )
+        detail = " ".join(parts)
 
     return {"met": met_last, "headline": headline, "detail": detail}

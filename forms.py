@@ -635,6 +635,7 @@ def show_session_form(
 
     # ── Working late (past the daily cutoff) ──────────────────────────────────
     late_text = None
+    late_error_lbl = None
     if late_cutoff:
         late_frame = tk.Frame(frame, bg="#fdecea", relief="flat", bd=0)
         late_frame.pack(fill=tk.X, pady=(12, 0))
@@ -648,7 +649,7 @@ def show_session_form(
         ).pack(anchor=tk.W)
         tk.Label(
             late_inner,
-            text="A quick note now helps you spot patterns later. (Optional)",
+            text="You'll see this note tomorrow morning. (Required)",
             bg="#fdecea", fg="#a04a3d", font=("", FS_XS),
             wraplength=400, justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 6))
@@ -657,6 +658,10 @@ def show_session_form(
             relief="solid", borderwidth=1,
         )
         late_text.pack(fill=tk.X)
+        late_error_lbl = tk.Label(
+            late_inner, text="⚠  Please add a note before saving.",
+            bg="#fdecea", fg="#c0392b", font=("", FS_XS),
+        )
 
     # ── Buttons ───────────────────────────────────────────────────────────────
     btn_frame = ttk.Frame(frame)
@@ -677,6 +682,11 @@ def show_session_form(
             root.geometry(f"460x{root.winfo_reqheight()}")
             _center_window(root)
             return
+        late_reason = late_text.get("1.0", tk.END).strip() if late_text is not None else None
+        if late_text is not None and not late_reason:
+            late_error_lbl.pack(anchor=tk.W, pady=(4, 0))
+            _resize_to_fit()
+            return
         result[0] = {
             "focus": max(1, min(10, int(float(focus_var.get())))),
             "topic": topic,
@@ -687,11 +697,7 @@ def show_session_form(
                 if distracted_var.get()
                 else None
             ),
-            "late_reason": (
-                late_text.get("1.0", tk.END).strip() or None
-                if late_text is not None
-                else None
-            ),
+            "late_reason": late_reason,
         }
         root.quit()
 
@@ -2196,6 +2202,80 @@ def show_schedule_greeting(met: bool, headline: str, detail: str) -> None:
     _bring_to_front(root)
     root.mainloop()
     root.destroy()
+
+
+# ─── Schedule goals: late-start reason ────────────────────────────────────────
+
+def show_late_start_form(start_by: str, started_at: str) -> str | None:
+    """Required-reason prompt shown when the first session of the day starts
+    after the start goal.  Returns the reason text, or None if dismissed.
+    """
+    result: list[str | None] = [None]
+
+    root = tk.Tk()
+    root.withdraw()
+    root.title("Starting late")
+    root.resizable(False, False)
+    _theme(root)
+
+    frame = ttk.Frame(root, padding=24)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    tk.Label(
+        frame, text="⏰  Starting after your goal",
+        fg=C_PRIMARY, font=("", FS_MD, "bold"),
+    ).pack(anchor=tk.W)
+    ttk.Label(
+        frame,
+        text=f"It's {started_at} — past your {start_by} start goal.\n"
+             f"What held you up this morning?",
+        font=("", FS_SM), foreground=C_MUTED, justify=tk.LEFT,
+    ).pack(anchor=tk.W, pady=(4, 2))
+    ttk.Label(
+        frame, text="You'll see this note tomorrow morning. (Required)",
+        font=("", FS_XS), foreground=C_MUTED,
+    ).pack(anchor=tk.W, pady=(0, 8))
+
+    reason_text = tk.Text(
+        frame, height=3, width=44, font=("", FS_SM), wrap=tk.WORD,
+        relief="solid", borderwidth=1,
+    )
+    reason_text.pack(fill=tk.X)
+    reason_text.focus_set()
+
+    error_lbl = ttk.Label(
+        frame, text="⚠  Please add a note before continuing.",
+        foreground="red", font=("", FS_XS),
+    )
+
+    btn_frame = ttk.Frame(frame)
+
+    def _submit() -> None:
+        txt = reason_text.get("1.0", tk.END).strip()
+        if not txt:
+            error_lbl.pack(before=btn_frame, anchor=tk.W, pady=(6, 0))
+            return
+        result[0] = txt
+        root.quit()
+
+    def _confirm_discard() -> None:
+        if messagebox.askyesno(
+            "Skip note?",
+            "Without a note this late start won't be recorded.\n\nSkip anyway?",
+            parent=root, default=messagebox.NO, icon=messagebox.WARNING,
+        ):
+            root.quit()
+
+    btn_frame.pack(fill=tk.X, pady=(14, 0))
+    ttk.Button(btn_frame, text="Save note →", command=_submit).pack(side=tk.RIGHT)
+
+    root.protocol("WM_DELETE_WINDOW", _confirm_discard)
+    root.bind("<Escape>", lambda _: _confirm_discard())
+
+    _bring_to_front(root)
+    root.mainloop()
+    root.destroy()
+    return result[0]
 
 
 # ─── Schedule goals: settings window ──────────────────────────────────────────

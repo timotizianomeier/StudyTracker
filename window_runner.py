@@ -119,6 +119,14 @@ def main() -> None:
         if result is not None:
             print(json.dumps(result), flush=True)
 
+    elif window == "late_start_form":
+        start_by   = sys.argv[2] if len(sys.argv) > 2 else "09:00"
+        started_at = sys.argv[3] if len(sys.argv) > 3 else ""
+        from forms import show_late_start_form
+        result = show_late_start_form(start_by, started_at)
+        if result is not None:
+            print(json.dumps(result), flush=True)
+
 
 if __name__ == "__main__":
     main()

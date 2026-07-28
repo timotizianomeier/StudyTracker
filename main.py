@@ -419,26 +419,38 @@ class PomodoroApp(rumps.App):
         # Open the duration-picker window in a background thread; the result
         # is picked up by _on_tick on the main thread to safely start the session.
         def _run() -> None:
-            self._maybe_show_morning_greeting()
+            self._run_morning_routine()
             result = _run_window("start_session", self.session_minutes, self.interrupts_on)
             if result is not None:
                 self._start_queue.put(result)
         threading.Thread(target=_run, daemon=True).start()
 
-    def _maybe_show_morning_greeting(self) -> None:
-        """On the first session start of a new day, reflect on the previous
-        active study day with a congratulatory or encouraging message."""
+    def _run_morning_routine(self) -> None:
+        """On the first session start of a new day: play back the previous
+        active study day (adherence + any reasons noted), then, if today's first
+        session is starting late, capture a required reason for the late start."""
         import schedule_goals
         try:
-            today = datetime.now().date()
-            if db.was_greeted(today.isoformat()):
-                return
-            greeting = schedule_goals.evaluate_previous_day(today)
-            db.mark_greeted(today.isoformat())
-            if greeting is not None:
-                _run_window("schedule_greeting", json.dumps(greeting))
+            now   = datetime.now()
+            today = now.date().isoformat()
+            first_session_of_day = not db.was_greeted(today)
+
+            if first_session_of_day:
+                greeting = schedule_goals.evaluate_previous_day(now.date())
+                db.mark_greeted(today)
+                if greeting is not None:
+                    _run_window("schedule_greeting", json.dumps(greeting))
+
+                # Only the day's first session can be a "late start".
+                start_by = schedule_goals.is_late_start(now)
+                if start_by is not None:
+                    reason = _run_window(
+                        "late_start_form", start_by, now.strftime("%H:%M")
+                    )
+                    if reason:
+                        db.mark_late_start(today, reason)
         except Exception:
-            pass  # a greeting is never worth blocking a session over
+            pass  # the morning routine must never block a session from starting
 
     def _record_distraction(self, _: rumps.MenuItem) -> None:
         if not self.is_running:

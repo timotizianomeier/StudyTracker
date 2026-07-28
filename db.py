@@ -40,15 +40,21 @@ def init_db() -> None:
                 term       TEXT
             )
         """)
-        # Per-day schedule-goal bookkeeping: late-work reasons and whether the
-        # morning greeting has already been shown for a given day.
+        # Per-day schedule-goal bookkeeping: the reasons given for missing the
+        # morning start / evening cutoff goals, and whether the morning greeting
+        # has already been shown for a given day.
         conn.execute("""
             CREATE TABLE IF NOT EXISTS day_log (
                 date               TEXT PRIMARY KEY,
                 over_cutoff_reason TEXT,
+                late_start_reason  TEXT,
                 greeted            INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # Migrate day_log tables created before late_start_reason existed.
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(day_log)")}
+        if "late_start_reason" not in cols:
+            conn.execute("ALTER TABLE day_log ADD COLUMN late_start_reason TEXT")
 
 
 def save_session(
@@ -479,3 +485,31 @@ def get_over_cutoff_reasons() -> list[sqlite3.Row]:
             "WHERE over_cutoff_reason IS NOT NULL AND over_cutoff_reason != '' "
             "ORDER BY date DESC"
         ).fetchall()
+
+
+def has_late_start_reason(date_str: str) -> bool:
+    """True if a late-start reason has already been logged for the given day."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT late_start_reason FROM day_log WHERE date = ?", (date_str,)
+        ).fetchone()
+    return bool(row and row["late_start_reason"])
+
+
+def mark_late_start(date_str: str, reason: str | None) -> None:
+    """Store the explanation for starting the day after the start goal."""
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO day_log (date, late_start_reason) VALUES (?, ?)
+               ON CONFLICT(date) DO UPDATE SET late_start_reason = excluded.late_start_reason""",
+            (date_str, reason or None),
+        )
+
+
+def get_day_log(date_str: str) -> dict | None:
+    """Return the day_log row (reasons + greeted flag) for a day, or None."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM day_log WHERE date = ?", (date_str,)
+        ).fetchone()
+    return dict(row) if row else None
