@@ -419,10 +419,14 @@ class PomodoroApp(rumps.App):
         # Open the duration-picker window in a background thread; the result
         # is picked up by _on_tick on the main thread to safely start the session.
         def _run() -> None:
-            self._run_morning_routine()
             result = _run_window("start_session", self.session_minutes, self.interrupts_on)
-            if result is not None:
-                self._start_queue.put(result)
+            if result is None:
+                return  # picker cancelled — no session, so no morning routine
+            # Only now that a session is actually starting do we run the morning
+            # routine, so cancelling the picker never consumes the day's greeting
+            # or triggers a spurious late-start prompt.
+            self._run_morning_routine()
+            self._start_queue.put(result)
         threading.Thread(target=_run, daemon=True).start()
 
     def _run_morning_routine(self) -> None:
