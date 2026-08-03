@@ -404,10 +404,28 @@ def show_session_form(
     root.withdraw()
     root.title("Session Complete!")
     root.resizable(False, False)
-    _theme(root)
+    style = _theme(root)
 
-    frame = ttk.Frame(root, padding=24)
-    frame.pack(fill=tk.BOTH, expand=True)
+    # The form can grow taller than the screen once both the distraction and
+    # late-work notes are showing, which previously pushed the Save button out
+    # of reach.  Host the content in a scrollable canvas with a capped height so
+    # every field — and the buttons — stays reachable.
+    _bg = style.lookup("TFrame", "background") or None
+    outer = ttk.Frame(root)
+    outer.pack(fill=tk.BOTH, expand=True)
+    _vsb = ttk.Scrollbar(outer, orient="vertical")
+    _canvas = tk.Canvas(outer, highlightthickness=0, bd=0, yscrollcommand=_vsb.set)
+    if _bg:
+        _canvas.configure(bg=_bg)
+    _vsb.config(command=_canvas.yview)
+    _vsb.pack(side=tk.RIGHT, fill=tk.Y)
+    _canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    frame = ttk.Frame(_canvas, padding=24)
+    _frame_id = _canvas.create_window((0, 0), window=frame, anchor="nw")
+    _canvas.bind("<Configure>", lambda e: _canvas.itemconfigure(_frame_id, width=e.width))
+    frame.bind("<Configure>", lambda e: _canvas.configure(scrollregion=_canvas.bbox("all")))
+    _canvas.bind_all("<MouseWheel>", lambda e: _canvas.yview_scroll(-1 * int(e.delta), "units"))
 
     # ── Header ────────────────────────────────────────────────────────────────
     ttk.Label(frame, text="🍅  Session Complete!", font=("", FS_MD, "bold")).pack(pady=(0, 4))
@@ -621,7 +639,13 @@ def show_session_form(
 
     def _resize_to_fit() -> None:
         root.update_idletasks()
-        root.geometry(f"460x{root.winfo_reqheight()}")
+        sb_w  = _vsb.winfo_reqwidth() or 16
+        req_h = frame.winfo_reqheight()
+        max_h = int(root.winfo_screenheight() * 0.85)
+        win_h = min(req_h, max_h)          # cap so the window never exceeds the screen
+        root.geometry(f"{460 + sb_w}x{win_h}")
+        root.update_idletasks()
+        _canvas.configure(scrollregion=_canvas.bbox("all"))
         _center_window(root)
 
     def _toggle_reason(*_: object) -> None:
@@ -671,16 +695,12 @@ def show_session_form(
         term = term_var.get().strip()
         if not term:
             term_error_lbl.pack(before=focus_sec_hdr, pady=(0, 6))
-            root.update_idletasks()
-            root.geometry(f"460x{root.winfo_reqheight()}")
-            _center_window(root)
+            _resize_to_fit()
             return
         topic = topic_var.get().strip()
         if not topic:
             error_lbl.pack(before=btn_frame, pady=(0, 6))
-            root.update_idletasks()
-            root.geometry(f"460x{root.winfo_reqheight()}")
-            _center_window(root)
+            _resize_to_fit()
             return
         late_reason = late_text.get("1.0", tk.END).strip() if late_text is not None else None
         if late_text is not None and not late_reason:
