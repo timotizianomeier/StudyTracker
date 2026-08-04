@@ -101,14 +101,20 @@ def evaluate_previous_day(today: date | None = None) -> dict | None:
             break
 
     if met_last:
+        fs = datetime.fromisoformat(last["first_start"]).strftime("%H:%M")
+        le = datetime.fromisoformat(last["last_end"]).strftime("%H:%M")
         headline = f"You hit your {start_by}–{end_by} window {when}!"
+        parts = [
+            f"You were underway by {fs} (goal {start_by}) and wrapped up by "
+            f"{le} (goal {end_by}). Nicely done."
+        ]
         if streak >= 2:
-            detail = (
-                f"That's {streak} focused days in a row. "
-                "Keep the momentum going today."
+            parts.append(
+                f"That's {streak} focused days in a row — keep the momentum going today."
             )
         else:
-            detail = "Kick today off the same way — start strong, finish on time."
+            parts.append("Kick today off the same way.")
+        detail = " ".join(parts)
     else:
         started_early, finished_ontime = _day_flags(last, start_by, end_by)
         fs = datetime.fromisoformat(last["first_start"]).strftime("%H:%M")
