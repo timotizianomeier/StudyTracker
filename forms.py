@@ -13,7 +13,7 @@ import db
 
 C_PRIMARY       = "#c0392b"   # tomato red — selected state, primary actions
 C_CHIP_SEL_BG   = "#c0392b"
-C_CHIP_SEL_FG   = "#1a1a1a"
+C_CHIP_SEL_FG   = "#ffffff"  # white on tomato — near-black here was unreadable
 C_CHIP_UNSEL_BG = "#eeeeee"
 C_CHIP_UNSEL_FG = "#555555"
 C_MUTED         = "#888888"
@@ -425,7 +425,21 @@ def show_session_form(
     _frame_id = _canvas.create_window((0, 0), window=frame, anchor="nw")
     _canvas.bind("<Configure>", lambda e: _canvas.itemconfigure(_frame_id, width=e.width))
     frame.bind("<Configure>", lambda e: _canvas.configure(scrollregion=_canvas.bbox("all")))
-    _canvas.bind_all("<MouseWheel>", lambda e: _canvas.yview_scroll(-1 * int(e.delta), "units"))
+
+    def _on_wheel(e: "tk.Event") -> None:
+        # bind_all reaches every widget in the window, so ignore the event when
+        # the cursor is over a text box (it scrolls itself — scrolling both at
+        # once jiggles the form) and when the whole form already fits.
+        w = root.winfo_containing(e.x_root, e.y_root)
+        while w is not None:
+            if isinstance(w, tk.Text):
+                return
+            w = w.master
+        if frame.winfo_reqheight() > _canvas.winfo_height():
+            steps = _wheel_steps(e)
+            if steps:
+                _canvas.yview_scroll(steps, "units")
+    _canvas.bind_all("<MouseWheel>", _on_wheel)
 
     # ── Header ────────────────────────────────────────────────────────────────
     ttk.Label(frame, text="🍅  Session Complete!", font=("", FS_MD, "bold")).pack(pady=(0, 4))
@@ -637,16 +651,31 @@ def show_session_form(
     )
     reason_text.pack(fill=tk.X, pady=(2, 0))
 
+    _centered = [False]
+
     def _resize_to_fit() -> None:
         root.update_idletasks()
-        sb_w  = _vsb.winfo_reqwidth() or 16
         req_h = frame.winfo_reqheight()
         max_h = int(root.winfo_screenheight() * 0.85)
         win_h = min(req_h, max_h)          # cap so the window never exceeds the screen
-        root.geometry(f"{460 + sb_w}x{win_h}")
+        if req_h > max_h:
+            _vsb.pack(side=tk.RIGHT, fill=tk.Y, before=_canvas)
+            win_w = 460 + (_vsb.winfo_reqwidth() or 16)
+        else:
+            _vsb.pack_forget()             # no overflow — don't reserve a scrollbar
+            win_w = 460
+        if _centered[0]:
+            # Keep the window where the user put it; just resize, clamping the
+            # bottom edge back onto the screen if growth would push it off.
+            x, y = root.winfo_x(), root.winfo_y()
+            y = max(0, min(y, root.winfo_screenheight() - win_h))
+            root.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        else:
+            root.geometry(f"{win_w}x{win_h}")
+            _center_window(root)
+            _centered[0] = True
         root.update_idletasks()
         _canvas.configure(scrollregion=_canvas.bbox("all"))
-        _center_window(root)
 
     def _toggle_reason(*_: object) -> None:
         if distracted_var.get():
@@ -673,7 +702,7 @@ def show_session_form(
         ).pack(anchor=tk.W)
         tk.Label(
             late_inner,
-            text="You'll see this note tomorrow morning. (Required)",
+            text="You'll see this note when your next study day begins. (Required)",
             bg="#fdecea", fg="#a04a3d", font=("", FS_XS),
             wraplength=400, justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 6))
@@ -2190,7 +2219,13 @@ def show_schedule_greeting(met: bool, headline: str, detail: str) -> None:
     """
     root = tk.Tk()
     root.withdraw()
-    root.title("Good morning!")
+    # The "morning" greeting fires on the day's FIRST session, whenever that is.
+    hour = datetime.datetime.now().hour
+    root.title(
+        "Good morning!" if hour < 12
+        else "Good afternoon!" if hour < 18
+        else "Good evening!"
+    )
     root.resizable(False, False)
     _theme(root)
 
@@ -2248,11 +2283,11 @@ def show_late_start_form(start_by: str, started_at: str) -> str | None:
     ttk.Label(
         frame,
         text=f"It's {started_at} — past your {start_by} start goal.\n"
-             f"What held you up this morning?",
+             f"What held you up?",
         font=("", FS_SM), foreground=C_MUTED, justify=tk.LEFT,
     ).pack(anchor=tk.W, pady=(4, 2))
     ttk.Label(
-        frame, text="You'll see this note tomorrow morning. (Required)",
+        frame, text="You'll see this note when your next study day begins. (Required)",
         font=("", FS_XS), foreground=C_MUTED,
     ).pack(anchor=tk.W, pady=(0, 8))
 
@@ -2321,7 +2356,7 @@ def show_schedule_settings() -> dict | None:
     ttk.Label(frame, text="🎯  Schedule Goals", font=("", FS_MD, "bold")).pack(pady=(0, 4))
     ttk.Label(
         frame,
-        text="Aim to start your day before the first time\nand wrap up by the second.",
+        text="Set your daily working window. You'll be\nasked for a short note when you miss it.",
         font=("", FS_SM), foreground=C_MUTED, justify=tk.CENTER,
     ).pack(pady=(0, 14))
 
