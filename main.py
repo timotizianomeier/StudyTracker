@@ -27,15 +27,22 @@ import db
 _RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "window_runner.py")
 
 
-def _run_window(window_type: str, *args) -> dict | int | None:
+def _run_window(
+    window_type: str, *args, timeout: float | None = 600
+) -> dict | int | None:
     """
     Open a window in a subprocess and block until it closes.
     Returns the parsed JSON result printed by the subprocess, or None.
     Safe to call from a background thread.
+
+    ``timeout=None`` disables the watchdog — required for windows holding
+    unsaved user data (e.g. the session scoring form), which must never be
+    killed just because the user stepped away; hitting the timeout kills the
+    window and returns None, indistinguishable from the user cancelling it.
     """
     cmd = [sys.executable, _RUNNER, window_type] + [str(a) for a in args]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         out = proc.stdout.strip()
         return json.loads(out) if out else None
     except Exception:
@@ -292,8 +299,11 @@ class PomodoroApp(rumps.App):
         except Exception:
             late_cutoff = None
 
+        # No timeout: the finished session's data lives only in this window
+        # until saved, so it must stay open however long scoring takes.
         result = _run_window(
-            "session_form", duration, json.dumps(distractions), late_cutoff or ""
+            "session_form", duration, json.dumps(distractions), late_cutoff or "",
+            timeout=None,
         )
         if not result:
             return
@@ -449,7 +459,8 @@ class PomodoroApp(rumps.App):
                 start_by = schedule_goals.is_late_start(now)
                 if start_by is not None:
                     reason = _run_window(
-                        "late_start_form", start_by, now.strftime("%H:%M")
+                        "late_start_form", start_by, now.strftime("%H:%M"),
+                        timeout=None,
                     )
                     if reason:
                         db.mark_late_start(today, reason)
