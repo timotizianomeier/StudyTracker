@@ -1,9 +1,11 @@
 """All tkinter UI: configure dialog, session feedback form, history window,
 breathing exercise, and 5-4-3-2-1 grounding."""
 
+import colorsys
 import datetime
 import math
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
 import db
@@ -25,6 +27,48 @@ FS_XS = 10   # captions / hints
 FS_SM = 12   # body
 FS_MD = 15   # section headers / window titles
 FS_LG = 24   # large numbers (focus rating, duration picker)
+
+# Curated set for the common case; past its end a fixed list would have to
+# repeat a colour, so wider charts switch to hues spread over the actual count.
+TOPIC_PALETTE = [
+    "#4e79a7", "#f28e2b", "#59a14f", "#b6992d", "#499894",
+    "#e15759", "#79706e", "#d37295", "#b07aa1", "#9d7660",
+]
+_HUE_OFFSET = 0.5417   # rotates the generated ramp off pure cyan
+
+
+def _topic_palette(n: int) -> list[str]:
+    """`n` visually distinct fills — no two series ever share a colour."""
+    if n <= len(TOPIC_PALETTE):
+        return TOPIC_PALETTE[:n]
+    colors = []
+    for i in range(n):
+        hue      = (i / n + _HUE_OFFSET) % 1.0
+        sat, val = (0.60, 0.70) if i % 2 == 0 else (0.40, 0.92)
+        r, g, b  = colorsys.hsv_to_rgb(hue, sat, val)
+        colors.append(f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}")
+    return colors
+
+
+def _readable_fg(widget: tk.Misc, bg: str) -> str:
+    """Dark or light label text, whichever reads on `bg`.
+
+    Goes through winfo_rgb so it also resolves the macOS system colours the
+    ttk theme hands out (which flip with the OS light/dark setting).
+    """
+    r, g, b = (c / 257 for c in widget.winfo_rgb(bg))
+    return "#333333" if (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 else "#f0f0f0"
+
+
+def _dimmed(color: str, amount: float = 0.8, toward: int = 235) -> str:
+    """`color` faded toward the grey level `toward` (0-255).
+
+    De-emphasised marks should sink into whatever they sit on, so callers pass
+    the surface they are drawn against: the white plot area, or the legend's
+    theme background.
+    """
+    r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+    return "#%02x%02x%02x" % tuple(int(c + (toward - c) * amount) for c in (r, g, b))
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -977,29 +1021,33 @@ def show_history_window() -> None:
                 day_topic[_d][_t] = (_row["total_min"], _row["avg_focus"], _row["sessions"])
                 all_topics_set.add(_t)
 
-            hist_days   = sorted(day_topic.keys())
+            # Every calendar day between the first and last session, so days
+            # off show up as gaps rather than being silently closed up.
+            _worked     = sorted(day_topic.keys())
+            _first      = datetime.date.fromisoformat(_worked[0])
+            _last       = datetime.date.fromisoformat(_worked[-1])
+            hist_days   = [(_first + datetime.timedelta(days=_i)).isoformat()
+                           for _i in range((_last - _first).days + 1)]
             hist_topics = sorted(all_topics_set)
 
             def _day_avg_focus(day: str) -> float | None:
                 total_m, weighted = 0.0, 0.0
-                for _total_m, _af, _s in day_topic[day].values():
+                for _total_m, _af, _s in day_topic.get(day, {}).values():
                     if _af is not None:
                         weighted += _af * _total_m
                         total_m  += _total_m
                 return round(weighted / total_m, 1) if total_m else None
 
-            _PALETTE = [
-                "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
-                "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
-            ]
-            topic_color = {t: _PALETTE[i % len(_PALETTE)] for i, t in enumerate(hist_topics)}
+            topic_color = dict(zip(hist_topics, _topic_palette(len(hist_topics))))
+            _topic_idx  = {t: i for i, t in enumerate(hist_topics)}
 
             ML, MR, MT, MB = 58, 24, 48, 56
             BW, BG = 52, 18
             CH     = 260
             SEG_LABEL_MIN_H = 22
+            SEG_MUTED, SEG_MUTED_FG = "#e2e2e2", "#cfcfcf"
 
-            _max_min = max(sum(v[0] for v in day_topic[d].values()) for d in hist_days)
+            _max_min = max(sum(v[0] for v in day_topic[d].values()) for d in _worked)
             _max_h   = _max_min / 60.0
             _y_max   = max(0.5, math.ceil(_max_h * 2) / 2)
             _canvas_w = ML + MR + len(hist_days) * (BW + BG)
@@ -1012,13 +1060,50 @@ def show_history_window() -> None:
             hist_btn_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=8, pady=(0, 6))
             ttk.Button(hist_btn_bar, text="Close", command=root.destroy).pack(side=tk.RIGHT)
 
-            leg_frame = ttk.Frame(hist_tab)
-            leg_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=ML + 8, pady=(0, 4))
-            for _t in hist_topics:
-                _swatch = tk.Canvas(leg_frame, width=14, height=14,
-                                    highlightthickness=0, bg=topic_color[_t])
-                _swatch.pack(side=tk.LEFT, padx=(0, 4))
-                ttk.Label(leg_frame, text=_t, font=("", 11)).pack(side=tk.LEFT, padx=(0, 16))
+            # Legend flows onto as many rows as the window width needs, so no
+            # module label is ever clipped off the right edge.  Clicking an
+            # entry isolates that module in the chart above.
+            _leg_bg   = ttk.Style().lookup("TFrame", "background") or "#ffffff"
+            _leg_font = tkfont.Font(family="", size=11)
+            _LEG_ROW_H, _LEG_GAP = 20, 18
+            leg_cv = tk.Canvas(hist_tab, bg=_leg_bg, highlightthickness=0,
+                               height=_LEG_ROW_H + 4, cursor="hand2")
+            leg_cv.pack(side=tk.BOTTOM, fill=tk.X, padx=8, pady=(0, 4))
+            _leg_grey   = int(sum(c / 257 for c in leg_cv.winfo_rgb(_leg_bg)) / 3)
+            _leg_fg     = _readable_fg(leg_cv, _leg_bg)
+            _leg_fg_off = _dimmed(_leg_fg, 0.5, _leg_grey)
+            _leg_last_w = [0]
+            _selected: set[str] = set()   # empty == show every module
+
+            def _draw_legend(_evt=None, force: bool = False) -> None:
+                _w = leg_cv.winfo_width()
+                if _w <= 1 or (_w == _leg_last_w[0] and not force):
+                    return
+                _leg_last_w[0] = _w
+                leg_cv.delete("all")
+                _x, _y, _rows = 0, _LEG_ROW_H // 2, 1
+                for _i, _t in enumerate(hist_topics):
+                    _iw = 12 + 5 + _leg_font.measure(_t) + _LEG_GAP
+                    if _x and _x + _iw > _w:
+                        _x, _y, _rows = 0, _y + _LEG_ROW_H, _rows + 1
+                    _on = (not _selected) or _t in _selected
+                    # Invisible hit target so the gap between swatch and label
+                    # is clickable too.
+                    leg_cv.create_rectangle(_x, _y - 9, _x + _iw - _LEG_GAP + 4, _y + 9,
+                                            fill=_leg_bg, outline="", tags=(f"leg{_i}",))
+                    leg_cv.create_rectangle(
+                        _x, _y - 6, _x + 12, _y + 6, outline="",
+                        fill=(topic_color[_t] if _on
+                              else _dimmed(topic_color[_t], 0.6, _leg_grey)),
+                        tags=(f"leg{_i}",))
+                    leg_cv.create_text(_x + 17, _y, text=_t, anchor="w",
+                                       font=_leg_font,
+                                       fill=_leg_fg if _on else _leg_fg_off,
+                                       tags=(f"leg{_i}",))
+                    _x += _iw
+                leg_cv.configure(height=_rows * _LEG_ROW_H + 4)
+
+            leg_cv.bind("<Configure>", _draw_legend)
 
             _scroll_frame = ttk.Frame(hist_tab)
             _scroll_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 4))
@@ -1050,7 +1135,7 @@ def show_history_window() -> None:
                 _x0 = ML + _di * (BW + BG)
                 _x1 = _x0 + BW
                 _cx = (_x0 + _x1) / 2
-                _day_data = day_topic[_day]
+                _day_data = day_topic.get(_day, {})
                 _total_m  = sum(v[0] for v in _day_data.values())
                 _yc       = MT + CH
 
@@ -1060,12 +1145,15 @@ def show_history_window() -> None:
                     _seg_m, _seg_af, _ = _day_data[_tp]
                     _bh = max(1, int(CH * _seg_m / (_y_max * 60)))
                     _yt = _yc - _bh
-                    cv.create_rectangle(_x0, _yt, _x1, _yc,
-                                        fill=topic_color[_tp], outline="white", width=1)
+                    cv.create_rectangle(_x0, _yt, _x1, _yc, fill=topic_color[_tp],
+                                        outline="white", width=1,
+                                        tags=(f"seg{_topic_idx[_tp]}",))
                     if _seg_af is not None and _bh >= SEG_LABEL_MIN_H:
                         cv.create_text((_x0 + _x1) / 2, (_yt + _yc) / 2,
-                                       text=f"{_seg_af:.1f}",
-                                       font=("", 10, "bold"), fill="white", anchor="center")
+                                       text=f"{_seg_af:.1f}", font=("", 10, "bold"),
+                                       fill=_readable_fg(cv, topic_color[_tp]),
+                                       anchor="center",
+                                       tags=(f"segtxt{_topic_idx[_tp]}",))
                     _yc = _yt
 
                 _daf = _day_avg_focus(_day)
@@ -1074,14 +1162,45 @@ def show_history_window() -> None:
                                    anchor="s", font=("", 10), fill="#555")
                     _yc -= 16
 
-                _th = _total_m / 60
-                cv.create_text(_cx, _yc - 2,
-                               text=f"{_th:.1f}h" if _th >= 0.1 else f"{_total_m}m",
-                               anchor="s", font=("", 11, "bold"), fill="#222")
+                if _total_m:
+                    _th = _total_m / 60
+                    cv.create_text(_cx, _yc - 2,
+                                   text=f"{_th:.1f}h" if _th >= 0.1 else f"{_total_m}m",
+                                   anchor="s", font=("", 11, "bold"), fill="#222")
                 # angle rotates counterclockwise; NE anchor makes the label
                 # slant down-left below the axis instead of up into the bars
                 cv.create_text(_x0 + BW // 2, MT + CH + 6, text=_day[5:],
-                               anchor="ne", font=("", 10), fill="#555", angle=45)
+                               anchor="ne", font=("", 10), angle=45,
+                               fill="#555" if _total_m else "#b4b4b4")
+
+            def _apply_highlight() -> None:
+                """Repaint segments: selected modules keep their colour, every
+                other one drops to a single flat grey so the selection is the
+                only thing with colour.  Empty selection == show everything."""
+                for _i, _t in enumerate(hist_topics):
+                    _on = (not _selected) or _t in _selected
+                    cv.itemconfigure(f"seg{_i}",
+                                     fill=topic_color[_t] if _on else SEG_MUTED)
+                    cv.itemconfigure(f"segtxt{_i}",
+                                     fill=_readable_fg(cv, topic_color[_t]) if _on
+                                     else SEG_MUTED_FG)
+                _draw_legend(force=True)
+
+            def _on_legend_click(evt: tk.Event) -> None:
+                for _item in leg_cv.find_overlapping(evt.x, evt.y, evt.x, evt.y):
+                    for _tag in leg_cv.gettags(_item):
+                        if _tag.startswith("leg"):
+                            _t = hist_topics[int(_tag[3:])]
+                            _selected.symmetric_difference_update({_t})
+                            if len(_selected) == len(hist_topics):
+                                _selected.clear()   # all on == none filtered
+                            _apply_highlight()
+                            return
+                if _selected:            # click on blank legend space resets
+                    _selected.clear()
+                    _apply_highlight()
+
+            leg_cv.bind("<Button-1>", _on_legend_click)
 
     term_var.trace_add("write", _rebuild)
     _rebuild()
