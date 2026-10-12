@@ -14,19 +14,36 @@ import db
 # ─── Design tokens ────────────────────────────────────────────────────────────
 
 C_PRIMARY       = "#c0392b"   # tomato red — selected state, primary actions
+C_PRIMARY_SOFT  = "#fbe9e6"   # tomato tint — selected presets, late-work box
+C_PRIMARY_INK   = "#8f2a1f"   # tomato text that stays readable on the tint
 C_CHIP_SEL_BG   = "#c0392b"
 C_CHIP_SEL_FG   = "#ffffff"  # white on tomato — near-black here was unreadable
-C_CHIP_UNSEL_BG = "#eeeeee"
-C_CHIP_UNSEL_FG = "#555555"
-C_MUTED         = "#888888"
+C_CHIP_UNSEL_BG = "#ffffff"
+C_CHIP_UNSEL_FG = "#3d3a34"
+C_MUTED         = "#888888"   # hints on the system window background (light or dark)
 C_DIVIDER       = "#e0e0e0"
 C_ROW_EVEN      = "#f8f8f8"
 C_ROW_ODD       = "#ffffff"
 
-FS_XS = 10   # captions / hints
-FS_SM = 12   # body
-FS_MD = 15   # section headers / window titles
-FS_LG = 24   # large numbers (focus rating, duration picker)
+# Card-style windows (start, configure, session form, statistics) paint their
+# own light surfaces instead of the system background.
+C_BG             = "#f6f5f2"  # warm window ground
+C_CARD           = "#ffffff"
+C_BORDER         = "#e4e1db"  # card hairlines
+C_CONTROL_BORDER = "#d6d2ca"  # text fields, secondary buttons
+C_TEXT           = "#1f1d1a"
+C_TEXT_2         = "#3d3a34"
+C_INK_MUTED      = "#6b675f"  # 5.6:1 on white; #888888 is only 3.5:1
+C_TRACK          = "#efede8"  # empty part of a bar
+C_NOTICE_BG      = "#fff4d6"
+C_NOTICE_BORDER  = "#f0dfa8"
+C_NOTICE_FG      = "#4a3d12"
+
+FS_XS = 11   # captions / hints / section labels
+FS_SM = 13   # body
+FS_MD = 15   # card titles
+FS_LG = 20   # window titles
+FS_XL = 32   # large numbers (duration picker, stat tiles)
 
 # Curated set for the common case; past its end a fixed list would have to
 # repeat a colour, so wider charts switch to hues spread over the actual count.
@@ -88,10 +105,15 @@ def _wheel_steps(event: "tk.Event") -> int:
 
 def _bind_wheel_yscroll(widget) -> None:
     """Make trackpad / mouse-wheel scrolling work on a vertically scrolling widget."""
+    _bind_wheel_yscroll_to(widget, widget)
+
+
+def _bind_wheel_yscroll_to(widget, target) -> None:
+    """Scroll `target` vertically when the wheel / trackpad moves over `widget`."""
     def _on_wheel(e: "tk.Event") -> str:
         steps = _wheel_steps(e)
         if steps:
-            widget.yview_scroll(steps, "units")
+            target.yview_scroll(steps, "units")
         return "break"
     widget.bind("<MouseWheel>", _on_wheel)
 
@@ -174,37 +196,180 @@ def _focus_descriptor(val: int) -> str:
     return "Excellent"
 
 
+# ─── Card-style widgets ───────────────────────────────────────────────────────
+# Plain tk widgets with explicit colours: the aqua theme ignores background
+# colours on most ttk widgets, and tk.Button can't be recoloured on macOS at
+# all, so chips and buttons on card windows are Labels that act like buttons.
+
+def _card_theme(root: tk.Tk) -> ttk.Style:
+    """_theme() plus the warm ground and the ttk styles used on top of it."""
+    style = _theme(root)
+    root.configure(bg=C_BG)
+    for name, bg in (("Card", C_CARD), ("Ground", C_BG)):
+        style.configure(f"{name}.TCheckbutton", background=bg, foreground=C_TEXT_2, font=("", FS_SM))
+        style.configure(f"{name}.Horizontal.TScale", background=bg)
+    return style
+
+
+def _bg_of(widget: tk.Misc) -> str:
+    try:
+        return widget.cget("bg")
+    except tk.TclError:   # ttk widgets have no -bg
+        return C_BG
+
+
+def _label(parent: tk.Misc, text: str = "", *, size: int = FS_SM, bold: bool = False,
+           fg: str = C_TEXT, **kw) -> tk.Label:
+    kw.setdefault("bg", _bg_of(parent))
+    return tk.Label(parent, text=text, font=("", size, "bold" if bold else "normal"),
+                    fg=fg, bd=0, **kw)
+
+
+def _caption(parent: tk.Misc, text: str) -> tk.Label:
+    """Small upper-case section label."""
+    return _label(parent, text.upper(), size=FS_XS, bold=True, fg=C_INK_MUTED)
+
+
+def _card(parent: tk.Misc, bg: str = C_CARD, border: str = C_BORDER) -> tk.Frame:
+    """White panel with a hairline border."""
+    return tk.Frame(parent, bg=bg, bd=0, highlightthickness=1,
+                    highlightbackground=border, highlightcolor=border)
+
+
+def _text_field_opts() -> dict:
+    """Shared look for tk.Entry / tk.Text on card windows."""
+    return dict(
+        font=("", FS_SM), bg=C_CARD, fg=C_TEXT, insertbackground=C_TEXT,
+        relief="flat", bd=0, highlightthickness=1,
+        highlightbackground=C_CONTROL_BORDER, highlightcolor=C_PRIMARY,
+    )
+
+
+class _Pill(tk.Label):
+    """A Label that behaves like a button: click, Space/Return, Tab focus."""
+
+    STYLES = {
+        # name:       (bg,             fg,            border,           bold)
+        "chip":      (C_CARD,         C_TEXT_2,      C_BORDER,         False),
+        "chip_on":   (C_PRIMARY,      "#ffffff",     C_PRIMARY,        False),
+        "soft_on":   (C_PRIMARY_SOFT, C_PRIMARY_INK, C_PRIMARY,        True),
+        "add":       (C_BG,           C_INK_MUTED,   C_CONTROL_BORDER, False),
+        "primary":   (C_PRIMARY,      "#ffffff",     C_PRIMARY,        True),
+        "secondary": (C_CARD,         C_TEXT_2,      C_CONTROL_BORDER, False),
+        "quiet":     (None,           C_INK_MUTED,   None,             False),  # parent's bg
+    }
+
+    def __init__(self, parent: tk.Misc, text: str, command, *, style: str = "chip",
+                 padx: int = 12, pady: int = 5, size: int = FS_SM, **kw) -> None:
+        super().__init__(parent, text=text, bd=0, highlightthickness=1,
+                         highlightcolor=C_TEXT,          # drawn while focused
+                         padx=padx, pady=pady, cursor="hand2", takefocus=1, **kw)
+        self._command = command
+        self._size = size
+        self.set_style(style)
+        for seq in ("<Button-1>", "<space>", "<Return>"):
+            self.bind(seq, self._invoke)
+
+    def _invoke(self, _: object = None) -> str:
+        self._command()
+        return "break"
+
+    def set_style(self, style: str) -> None:
+        bg, fg, border, bold = self.STYLES[style]
+        bg = bg or _bg_of(self.master)
+        self.configure(
+            bg=bg, fg=fg, activebackground=bg, activeforeground=fg,
+            highlightbackground=border or bg,
+            font=("", self._size, "bold" if bold else "normal"),
+        )
+
+
+def _flow_rows(parent: tk.Misc, texts: list[str], avail_w: int) -> list[tuple[tk.Frame, str]]:
+    """Wrap pills onto as many rows as `avail_w` px needs.
+
+    Returns a (row frame, text) pair per item; callers create each pill in
+    its row frame and pack it to the left.
+    """
+    f = tkfont.Font(family="", size=FS_SM)
+    out: list[tuple[tk.Frame, str]] = []
+    row, row_w = None, 0
+    for t in texts:
+        w = f.measure(t) + 2 * 12 + 2 + 6   # text + padx + border + gap
+        if row is None or (row_w and row_w + w > avail_w):
+            row = tk.Frame(parent, bg=_bg_of(parent))
+            row.pack(fill=tk.X, anchor=tk.W, pady=(6 if out else 0, 0))
+            row_w = 0
+        out.append((row, t))
+        row_w += w
+    return out
+
+
 # ─── Shared: duration-picker widget builder ───────────────────────────────────
 
+DURATION_PRESETS = (15, 25, 45, 50)
+
+
 def _build_duration_picker(
-    frame: ttk.Frame,
+    frame: tk.Misc,
     current_minutes: int,
     _min: int = 5,
     _max: int = 55,
 ) -> tk.DoubleVar:
     """
-    Add a session-length label, value display, and slider to *frame*.
+    Add a card to *frame* with a big minutes readout, one-click presets, and
+    a slider for anything in between.
     Returns the DoubleVar that holds the chosen value.
     """
-    ttk.Label(frame, text="Session length", font=("", FS_SM)).pack()
+    card = _card(frame)
+    card.pack(fill=tk.X)
+    inner = tk.Frame(card, bg=C_CARD)
+    inner.pack(fill=tk.X, padx=20, pady=18)
 
-    clamped  = max(_min, min(_max, current_minutes))
-    dur_var  = tk.DoubleVar(value=float(clamped))
-    val_label = ttk.Label(frame, text=f"{clamped} min", font=("", FS_LG, "bold"))
-    val_label.pack(pady=(4, 10))
+    clamped = max(_min, min(_max, current_minutes))
+    dur_var = tk.DoubleVar(value=float(clamped))
 
-    def _on_slider(val: str) -> None:
-        val_label.config(text=f"{round(float(val))} min")
+    readout = tk.Frame(inner, bg=C_CARD)
+    readout.pack()
+    num_lbl = _label(readout, str(clamped), size=FS_XL, bold=True)
+    num_lbl.pack(side=tk.LEFT)
+    _label(readout, "min", size=FS_MD, fg=C_INK_MUTED).pack(side=tk.LEFT, anchor="s", padx=(6, 0), pady=(0, 8))
 
-    slider_row = ttk.Frame(frame)
-    slider_row.pack(fill=tk.X, pady=(0, 6))
-    ttk.Label(slider_row, text=str(_min), foreground=C_MUTED).pack(side=tk.LEFT)
+    presets = tk.Frame(inner, bg=C_CARD)
+    presets.pack(fill=tk.X, pady=(12, 10))
+    preset_pills: dict[int, _Pill] = {}
+    for i, m in enumerate(DURATION_PRESETS):
+        presets.columnconfigure(i, weight=1, uniform="preset")
+        pill = _Pill(presets, str(m), lambda m=m: dur_var.set(float(m)), pady=7)
+        pill.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 8, 0))
+        preset_pills[m] = pill
+
+    slider_row = tk.Frame(inner, bg=C_CARD)
+    slider_row.pack(fill=tk.X)
+    _label(slider_row, str(_min), size=FS_XS, fg=C_INK_MUTED).pack(side=tk.LEFT)
     ttk.Scale(
         slider_row, from_=_min, to=_max, orient=tk.HORIZONTAL,
-        variable=dur_var, command=_on_slider, length=240,
+        variable=dur_var, style="Card.Horizontal.TScale",
     ).pack(side=tk.LEFT, padx=8, expand=True, fill=tk.X)
-    ttk.Label(slider_row, text=str(_max), foreground=C_MUTED).pack(side=tk.LEFT)
+    _label(slider_row, str(_max), size=FS_XS, fg=C_INK_MUTED).pack(side=tk.LEFT)
+
+    def _sync(*_: object) -> None:
+        v = round(dur_var.get())
+        num_lbl.config(text=str(v))
+        for m, pill in preset_pills.items():
+            pill.set_style("soft_on" if m == v else "chip")
+
+    dur_var.trace_add("write", _sync)
+    _sync()
     return dur_var
+
+
+def _dialog_frame(root: tk.Tk, title: str, width: int = 400) -> tk.Frame:
+    """Padded ground-coloured content frame with a window-title heading."""
+    frame = tk.Frame(root, bg=C_BG, padx=28, pady=24)
+    frame.pack(fill=tk.BOTH, expand=True)
+    tk.Frame(frame, bg=C_BG, width=width - 56, height=0).pack()   # fixes the width
+    _label(frame, title, size=FS_LG, bold=True).pack(anchor=tk.W, pady=(0, 16))
+    return frame
 
 
 # ─── Start-session window (slider + Play button) ──────────────────────────────
@@ -222,22 +387,19 @@ def show_start_window(current_minutes: int, interrupts_on: bool = True) -> dict 
     root = tk.Tk()
     root.withdraw()
     root.title("Start Session")
-    root.geometry("360x260")
     root.resizable(False, False)
-    _theme(root)
-    _bring_to_front(root)
+    _card_theme(root)
 
-    frame = ttk.Frame(root, padding=24)
-    frame.pack(fill=tk.BOTH, expand=True)
+    frame = _dialog_frame(root, "Start a session")
 
     dur_var = _build_duration_picker(frame, current_minutes)
 
     disable_interrupts_var = tk.BooleanVar(value=not interrupts_on)
     interrupts_check = ttk.Checkbutton(
         frame, text="Disable interrupts for this session",
-        variable=disable_interrupts_var,
+        variable=disable_interrupts_var, style="Ground.TCheckbutton",
     )
-    interrupts_check.pack(anchor=tk.W, pady=(8, 0))
+    interrupts_check.pack(anchor=tk.W, pady=(14, 0))
     if not interrupts_on:
         # Already disabled globally via the menu-bar toggle - reflect that
         # here instead of letting the user uncheck a box that has no effect.
@@ -253,15 +415,18 @@ def show_start_window(current_minutes: int, interrupts_on: bool = True) -> dict 
     def _cancel() -> None:
         root.quit()
 
-    btn_frame = ttk.Frame(frame)
-    btn_frame.pack(pady=(10, 0))
-    ttk.Button(btn_frame, text="Cancel", command=_cancel).pack(side=tk.LEFT, padx=6)
-    ttk.Button(btn_frame, text="▶  Start", command=_start).pack(side=tk.LEFT, padx=6)
+    btn_frame = tk.Frame(frame, bg=C_BG)
+    btn_frame.pack(fill=tk.X, pady=(18, 0))
+    _Pill(btn_frame, "Cancel", _cancel, style="secondary", padx=18, pady=9).pack(side=tk.LEFT)
+    _Pill(btn_frame, "▶  Start focusing", _start, style="primary", size=FS_MD, pady=8).pack(
+        side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0)
+    )
 
     root.protocol("WM_DELETE_WINDOW", _cancel)
     root.bind("<Return>", lambda _: _start())
     root.bind("<Escape>", lambda _: _cancel())
 
+    _bring_to_front(root)
     root.mainloop()
     root.destroy()
     return result[0]
@@ -279,13 +444,10 @@ def show_configure_window(current_minutes: int) -> int | None:
     root = tk.Tk()
     root.withdraw()
     root.title("Configure Session")
-    root.geometry("360x230")
     root.resizable(False, False)
-    _theme(root)
-    _bring_to_front(root)
+    _card_theme(root)
 
-    frame = ttk.Frame(root, padding=24)
-    frame.pack(fill=tk.BOTH, expand=True)
+    frame = _dialog_frame(root, "Default session length")
 
     dur_var = _build_duration_picker(frame, current_minutes)
 
@@ -296,15 +458,16 @@ def show_configure_window(current_minutes: int) -> int | None:
     def _cancel() -> None:
         root.quit()
 
-    btn_frame = ttk.Frame(frame)
-    btn_frame.pack(pady=(10, 0))
-    ttk.Button(btn_frame, text="Cancel", command=_cancel).pack(side=tk.LEFT, padx=6)
-    ttk.Button(btn_frame, text="   OK   ", command=_ok).pack(side=tk.LEFT, padx=6)
+    btn_frame = tk.Frame(frame, bg=C_BG)
+    btn_frame.pack(fill=tk.X, pady=(18, 0))
+    _Pill(btn_frame, "Save", _ok, style="primary", padx=22, pady=9).pack(side=tk.RIGHT)
+    _Pill(btn_frame, "Cancel", _cancel, style="secondary", padx=18, pady=9).pack(side=tk.RIGHT, padx=(0, 10))
 
     root.protocol("WM_DELETE_WINDOW", _cancel)
     root.bind("<Return>", lambda _: _ok())
     root.bind("<Escape>", lambda _: _cancel())
 
+    _bring_to_front(root)
     root.mainloop()
     root.destroy()
     return result[0]
@@ -444,28 +607,52 @@ def show_session_form(
     """
     result: list[dict | None] = [None]
 
+    FORM_W = 460
+    PAD    = 28
+    AVAIL  = FORM_W - 2 * PAD
+
     root = tk.Tk()
     root.withdraw()
     root.title("Session Complete!")
     root.resizable(False, False)
-    style = _theme(root)
+    _card_theme(root)
+
+    # ── Header (pinned) ───────────────────────────────────────────────────────
+    header = tk.Frame(root, bg=C_CARD)
+    header.pack(side=tk.TOP, fill=tk.X)
+    tk.Frame(root, bg=C_BORDER, height=1).pack(side=tk.TOP, fill=tk.X)
+    hdr_inner = tk.Frame(header, bg=C_CARD)
+    hdr_inner.pack(fill=tk.X, padx=PAD, pady=(22, 18))
+    badge = tk.Canvas(hdr_inner, width=44, height=44, bg=C_CARD, highlightthickness=0, bd=0)
+    badge.create_oval(1, 1, 43, 43, fill=C_PRIMARY_SOFT, outline="")
+    badge.create_line(13, 23, 19, 29, 31, 16, fill=C_PRIMARY, width=3,
+                      capstyle=tk.ROUND, joinstyle=tk.ROUND)
+    badge.pack(side=tk.LEFT)
+    titles = tk.Frame(hdr_inner, bg=C_CARD)
+    titles.pack(side=tk.LEFT, padx=(14, 0))
+    _label(titles, "Session complete", size=FS_LG, bold=True).pack(anchor=tk.W)
+    _label(
+        titles, f"{duration_minutes} min · ended {datetime.datetime.now():%H:%M}",
+        fg=C_INK_MUTED,
+    ).pack(anchor=tk.W)
+
+    # ── Footer (pinned) — packed before the scroll area so it keeps its space ─
+    footer = tk.Frame(root, bg=C_CARD)
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    tk.Frame(root, bg=C_BORDER, height=1).pack(side=tk.BOTTOM, fill=tk.X)
 
     # The form can grow taller than the screen once both the distraction and
-    # late-work notes are showing, which previously pushed the Save button out
-    # of reach.  Host the content in a scrollable canvas with a capped height so
-    # every field — and the buttons — stays reachable.
-    _bg = style.lookup("TFrame", "background") or None
-    outer = ttk.Frame(root)
+    # late-work notes are showing.  Host the fields in a scrollable canvas with
+    # a capped height; the header and the Save button stay pinned outside it.
+    outer = tk.Frame(root, bg=C_BG)
     outer.pack(fill=tk.BOTH, expand=True)
     _vsb = ttk.Scrollbar(outer, orient="vertical")
-    _canvas = tk.Canvas(outer, highlightthickness=0, bd=0, yscrollcommand=_vsb.set)
-    if _bg:
-        _canvas.configure(bg=_bg)
+    _canvas = tk.Canvas(outer, bg=C_BG, highlightthickness=0, bd=0, yscrollcommand=_vsb.set)
     _vsb.config(command=_canvas.yview)
     _vsb.pack(side=tk.RIGHT, fill=tk.Y)
     _canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-    frame = ttk.Frame(_canvas, padding=24)
+    frame = tk.Frame(_canvas, bg=C_BG, padx=PAD, pady=20)
     _frame_id = _canvas.create_window((0, 0), window=frame, anchor="nw")
     _canvas.bind("<Configure>", lambda e: _canvas.itemconfigure(_frame_id, width=e.width))
     frame.bind("<Configure>", lambda e: _canvas.configure(scrollregion=_canvas.bbox("all")))
@@ -485,229 +672,170 @@ def show_session_form(
                 _canvas.yview_scroll(steps, "units")
     _canvas.bind_all("<MouseWheel>", _on_wheel)
 
-    # ── Header ────────────────────────────────────────────────────────────────
-    ttk.Label(frame, text="🍅  Session Complete!", font=("", FS_MD, "bold")).pack(pady=(0, 4))
-    ttk.Label(
-        frame,
-        text=f"Duration: {duration_minutes} min",
-        foreground=C_MUTED,
-        font=("", FS_SM),
-    ).pack(pady=(0, 4))
+    def _section(title: str) -> tuple[tk.Frame, tk.Frame]:
+        """A labelled block in the form; returns (block, its heading row)."""
+        sec = tk.Frame(frame, bg=C_BG)
+        sec.pack(fill=tk.X, pady=(0, 18))
+        head = tk.Frame(sec, bg=C_BG)
+        head.pack(fill=tk.X, pady=(0, 8))
+        _caption(head, title).pack(side=tk.LEFT)
+        return sec, head
 
     # ── Distraction reminder ──────────────────────────────────────────────────
     if distractions:
-        _section_header(frame, "Distractions to follow up on")
-        reminder_frame = tk.Frame(frame, bg="#fff8e1", relief="flat", bd=0)
-        reminder_frame.pack(fill=tk.X, pady=(0, 6))
-        dist_text = "\n".join(f"• {d}" for d in distractions)
-        dist_box = tk.Text(
-            reminder_frame,
-            bg="#fff8e1",
-            font=("", FS_SM),
-            fg="#5d4037",
-            relief="flat",
-            bd=0,
-            wrap=tk.WORD,
-            padx=10,
-            pady=8,
-            height=len(distractions),
-            width=52,
-            cursor="arrow",
-        )
-        dist_box.insert("1.0", dist_text)
-        dist_box.config(state=tk.DISABLED)
-        dist_box.pack(anchor=tk.W)
+        notice = _card(frame, bg=C_NOTICE_BG, border=C_NOTICE_BORDER)
+        notice.pack(fill=tk.X, pady=(0, 18))
+        n_in = tk.Frame(notice, bg=C_NOTICE_BG)
+        n_in.pack(fill=tk.X, padx=14, pady=12)
+        _label(n_in, "DISTRACTIONS TO FOLLOW UP ON", size=FS_XS, bold=True, fg=C_NOTICE_FG).pack(anchor=tk.W)
+        _label(
+            n_in, "\n".join(f"•  {d}" for d in distractions), fg=C_NOTICE_FG,
+            justify=tk.LEFT, anchor="w", wraplength=AVAIL - 30,
+        ).pack(anchor=tk.W, pady=(4, 0))
+
+    def _chip_group(title: str, var: tk.StringVar, options: list[str],
+                    noun: str, example: str) -> tk.Label:
+        """Chips for the known values plus "+ New", which reveals a text box.
+
+        Returns the section's (hidden) validation-error label.
+        """
+        sec, _ = _section(title)
+        pills: dict[str, _Pill] = {}
+
+        entry_box = tk.Frame(sec, bg=C_BG)
+        entry = tk.Entry(entry_box, textvariable=var, **_text_field_opts())
+        entry.pack(fill=tk.X, ipady=5)
+        error_lbl = _label(sec, f"⚠  Please choose or enter a {noun} before saving.", fg=C_PRIMARY_INK)
+
+        def _new() -> None:
+            if var.get() in pills:
+                var.set("")
+            if not entry_box.winfo_ismapped():
+                entry_box.pack(fill=tk.X, pady=(8, 0), before=error_lbl if error_lbl.winfo_ismapped() else None)
+                _resize_to_fit()
+            entry.focus_set()
+
+        if options:
+            chips = tk.Frame(sec, bg=C_BG)
+            chips.pack(fill=tk.X)
+            rows = _flow_rows(chips, [*options, f"+ New {noun}"], AVAIL)
+            for i, (row, text) in enumerate(rows):
+                if i == len(options):
+                    _Pill(row, text, _new, style="add").pack(side=tk.LEFT)
+                else:
+                    pill = _Pill(row, text, lambda t=text: var.set(t))
+                    pill.pack(side=tk.LEFT, padx=(0, 6))
+                    pills[text] = pill
+            if var.get() and var.get() not in pills:
+                entry_box.pack(fill=tk.X, pady=(8, 0))
+        else:
+            entry_box.pack(fill=tk.X)
+            _label(entry_box, example, size=FS_XS, fg=C_INK_MUTED).pack(anchor=tk.W, pady=(4, 0))
+
+        def _sync(*_: object) -> None:
+            cur = var.get()
+            for t, pill in pills.items():
+                pill.set_style("chip_on" if cur == t else "chip")
+            if cur.strip():
+                error_lbl.pack_forget()
+
+        var.trace_add("write", _sync)
+        _sync()
+        return error_lbl
 
     # ── Term ──────────────────────────────────────────────────────────────────
-    term_sec_hdr = _section_header(frame, "Term")
-
-    term_error_lbl = ttk.Label(
-        frame, text="⚠  Please enter a term before saving.", foreground="red", font=("", FS_SM)
+    term_var = tk.StringVar(value=db.get_last_term() or "")
+    term_error_lbl = _chip_group(
+        "Term", term_var, db.get_all_terms(), "term",
+        "e.g.  Spring 2025 · Autumn 2025 · Summer",
     )
 
-    existing_terms = db.get_all_terms()
-    last_term      = db.get_last_term()
-    term_var       = tk.StringVar(value=last_term or "")
-    term_chip_btns: dict[str, tk.Button] = {}
-
-    term_frame = ttk.Frame(frame)
-    term_frame.pack(fill=tk.X, pady=(0, 4))
-
-    def _on_term_changed(*_: object) -> None:
-        cur = term_var.get()
-        for t, b in term_chip_btns.items():
-            b.config(
-                bg=C_CHIP_SEL_BG   if cur == t else C_CHIP_UNSEL_BG,
-                fg=C_CHIP_SEL_FG   if cur == t else C_CHIP_UNSEL_FG,
-            )
-        if cur.strip():
-            term_error_lbl.pack_forget()
-
-    if existing_terms:
-        tc_outer = ttk.Frame(term_frame)
-        tc_outer.pack(fill=tk.X, pady=(0, 8))
-        TERM_AVAIL_W = 360
-        rows_of_terms: list[list[str]] = [[]]
-        row_w = 0
-        for _t in existing_terms:
-            _bw = len(_t) * 7 + 36
-            if row_w > 0 and row_w + _bw > TERM_AVAIL_W:
-                rows_of_terms.append([])
-                row_w = 0
-            rows_of_terms[-1].append(_t)
-            row_w += _bw
-        for _ri, _row_terms in enumerate(rows_of_terms):
-            _rf = ttk.Frame(tc_outer)
-            _rf.pack(fill=tk.X, anchor=tk.W, pady=(0 if _ri == 0 else 2, 0))
-            for _term_name in _row_terms:
-                _btn = tk.Button(
-                    _rf, text=_term_name, relief="flat",
-                    bg=C_CHIP_UNSEL_BG, fg=C_CHIP_UNSEL_FG,
-                    font=("", FS_SM), padx=8, pady=3, cursor="hand2", bd=0,
-                    command=lambda t=_term_name: term_var.set(t),
-                )
-                _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
-                term_chip_btns[_term_name] = _btn
-        ttk.Label(term_frame, text="Or add a new term:", foreground=C_MUTED, font=("", FS_XS)).pack(anchor=tk.W)
-    else:
-        ttk.Label(
-            term_frame,
-            text="e.g.  Spring 2025 · Autumn 2025 · Summer",
-            foreground=C_MUTED, font=("", FS_XS),
-        ).pack(anchor=tk.W, pady=(0, 4))
-    ttk.Entry(term_frame, textvariable=term_var, font=("", FS_SM)).pack(fill=tk.X)
-    term_var.trace_add("write", _on_term_changed)
-    if last_term and last_term in term_chip_btns:
-        term_chip_btns[last_term].config(bg=C_CHIP_SEL_BG, fg=C_CHIP_SEL_FG)
+    # ── Topic ─────────────────────────────────────────────────────────────────
+    topic_var = tk.StringVar()
+    error_lbl = _chip_group(
+        "Topic / Project", topic_var, db.get_all_topics(), "topic",
+        "e.g.  Math homework · Work report · Reading",
+    )
 
     # ── Focus rating ──────────────────────────────────────────────────────────
-    focus_sec_hdr = _section_header(frame, "Focus Rating")
-    focus_frame = ttk.Frame(frame)
-    focus_frame.pack(fill=tk.X, pady=(0, 4))
+    focus_sec, focus_head = _section("How focused were you?")
 
     _summary = db.get_summary()
     _avg = _summary.get("avg_focus")
-    default_focus = float(max(1, min(10, round(_avg))) if _avg else 7)
+    default_focus = int(max(1, min(10, round(_avg))) if _avg else 7)
+    focus_var = tk.IntVar(value=default_focus)
 
-    focus_var = tk.DoubleVar(value=default_focus)
+    desc_lbl = _label(focus_head, "", bold=True, fg=C_PRIMARY_INK)
+    desc_lbl.pack(side=tk.RIGHT)
 
-    rating_lbl = ttk.Label(
-        focus_frame, text=str(int(default_focus)), font=("", FS_LG, "bold"), width=3, anchor="center"
-    )
-    rating_lbl.pack()
+    focus_grid = tk.Frame(focus_sec, bg=C_BG)
+    focus_grid.pack(fill=tk.X)
+    focus_cells: list[_Pill] = []
 
-    desc_lbl = ttk.Label(
-        focus_frame, text=_focus_descriptor(int(default_focus)), font=("", FS_XS), foreground=C_MUTED
-    )
-    desc_lbl.pack(pady=(0, 4))
+    def _nudge(step: int) -> str:
+        focus_var.set(max(1, min(10, focus_var.get() + step)))
+        focus_cells[focus_var.get() - 1].focus_set()
+        return "break"
 
-    def _on_scale(val: str) -> None:
-        v = int(float(val))
-        rating_lbl.config(text=str(v))
-        desc_lbl.config(text=_focus_descriptor(v))
+    for i in range(10):
+        focus_grid.columnconfigure(i, weight=1, uniform="focus")
+        cell = _Pill(focus_grid, str(i + 1), lambda v=i + 1: focus_var.set(v), padx=0, pady=8)
+        cell.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 4, 0))
+        cell.bind("<Left>",  lambda _: _nudge(-1))
+        cell.bind("<Right>", lambda _: _nudge(+1))
+        focus_cells.append(cell)
 
-    ttk.Scale(
-        focus_frame, from_=1, to=10, orient=tk.HORIZONTAL,
-        variable=focus_var, command=_on_scale, length=340,
-    ).pack(pady=(4, 2))
+    ends = tk.Frame(focus_sec, bg=C_BG)
+    ends.pack(fill=tk.X, pady=(6, 0))
+    _label(ends, "Terrible", size=FS_XS, fg=C_INK_MUTED).pack(side=tk.LEFT)
+    _label(ends, "Perfect", size=FS_XS, fg=C_INK_MUTED).pack(side=tk.RIGHT)
 
-    tips = ttk.Frame(focus_frame)
-    tips.pack(fill=tk.X)
-    ttk.Label(tips, text="1 – terrible", foreground=C_MUTED, font=("", FS_XS)).pack(side=tk.LEFT)
-    ttk.Label(tips, text="10 – perfect", foreground=C_MUTED, font=("", FS_XS)).pack(side=tk.RIGHT)
+    def _on_focus(*_: object) -> None:
+        v = focus_var.get()
+        desc_lbl.config(text=f"{v} · {_focus_descriptor(v)}")
+        for i, cell in enumerate(focus_cells):
+            cell.set_style("chip_on" if i + 1 == v else "chip")
 
-    # ── Topic ─────────────────────────────────────────────────────────────────
-    topic_sec_hdr = _section_header(frame, "Topic / Project")
-    topic_frame = ttk.Frame(frame)
-    topic_frame.pack(fill=tk.X, pady=(0, 4))
-
-    error_lbl = ttk.Label(frame, text="⚠  Please enter a topic before saving.", foreground="red", font=("", FS_SM))
-
-    topic_var = tk.StringVar()
-    existing_topics = db.get_all_topics()
-    chip_btns: dict[str, tk.Button] = {}
-
-    def _on_topic_var_changed(*_: object) -> None:
-        current = topic_var.get()
-        for t, b in chip_btns.items():
-            b.config(
-                bg=C_CHIP_SEL_BG   if current == t else C_CHIP_UNSEL_BG,
-                fg=C_CHIP_SEL_FG   if current == t else C_CHIP_UNSEL_FG,
-            )
-        if current.strip():
-            error_lbl.pack_forget()
-
-    if existing_topics:
-        chips_outer = ttk.Frame(topic_frame)
-        chips_outer.pack(fill=tk.X, pady=(0, 8))
-
-        AVAIL_W = 360
-        rows_of_topics: list[list[str]] = [[]]
-        row_w = 0
-        for _t in existing_topics:
-            _bw = len(_t) * 7 + 36
-            if row_w > 0 and row_w + _bw > AVAIL_W:
-                rows_of_topics.append([])
-                row_w = 0
-            rows_of_topics[-1].append(_t)
-            row_w += _bw
-
-        for _ri, _row_topics in enumerate(rows_of_topics):
-            _row_frame = ttk.Frame(chips_outer)
-            _row_frame.pack(fill=tk.X, anchor=tk.W, pady=(0 if _ri == 0 else 2, 0))
-            for _topic in _row_topics:
-                _btn = tk.Button(
-                    _row_frame, text=_topic, relief="flat",
-                    bg=C_CHIP_UNSEL_BG, fg=C_CHIP_UNSEL_FG,
-                    font=("", FS_SM), padx=8, pady=3, cursor="hand2", bd=0,
-                    command=lambda t=_topic: topic_var.set(t),
-                )
-                _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
-                chip_btns[_topic] = _btn
-
-        ttk.Label(topic_frame, text="Or add a new one:", foreground=C_MUTED, font=("", FS_XS)).pack(anchor=tk.W)
-    else:
-        ttk.Label(
-            topic_frame,
-            text="e.g.  Math homework · Work report · Reading",
-            foreground=C_MUTED, font=("", FS_XS),
-        ).pack(anchor=tk.W, pady=(0, 4))
-    ttk.Entry(topic_frame, textvariable=topic_var, font=("", FS_SM)).pack(fill=tk.X)
-    topic_var.trace_add("write", _on_topic_var_changed)
+    focus_var.trace_add("write", _on_focus)
+    _on_focus()
 
     # ── Distraction ───────────────────────────────────────────────────────────
-    _section_header(frame, "Distractions")
-    distract_frame = ttk.Frame(frame)
-    distract_frame.pack(fill=tk.X, pady=(0, 4))
+    distract_sec, _ = _section("Distractions")
+    distract_card = _card(distract_sec)
+    distract_card.pack(fill=tk.X)
+    distract_frame = tk.Frame(distract_card, bg=C_CARD)
+    distract_frame.pack(fill=tk.X, padx=14, pady=12)
 
     distracted_var = tk.BooleanVar(value=False)
     ttk.Checkbutton(
         distract_frame,
         text="I got distracted during this session",
         variable=distracted_var,
+        style="Card.TCheckbutton",
     ).pack(anchor=tk.W)
 
-    reason_container = ttk.Frame(distract_frame)
-    ttk.Label(reason_container, text="What distracted you?", font=("", FS_SM)).pack(anchor=tk.W)
+    reason_container = tk.Frame(distract_frame, bg=C_CARD)
+    _label(reason_container, "What distracted you?", fg=C_INK_MUTED).pack(anchor=tk.W)
     reason_text = tk.Text(
-        reason_container, height=3, font=("", FS_SM), wrap=tk.WORD,
-        relief="solid", borderwidth=1,
+        reason_container, height=3, width=1, wrap=tk.WORD, padx=8, pady=6,
+        **_text_field_opts(),
     )
-    reason_text.pack(fill=tk.X, pady=(2, 0))
+    reason_text.pack(fill=tk.X, pady=(4, 0))
 
     _centered = [False]
 
     def _resize_to_fit() -> None:
         root.update_idletasks()
-        req_h = frame.winfo_reqheight()
+        chrome = header.winfo_reqheight() + footer.winfo_reqheight() + 2   # + hairlines
+        req_h = frame.winfo_reqheight() + chrome
         max_h = int(root.winfo_screenheight() * 0.85)
         win_h = min(req_h, max_h)          # cap so the window never exceeds the screen
         if req_h > max_h:
             _vsb.pack(side=tk.RIGHT, fill=tk.Y, before=_canvas)
-            win_w = 460 + (_vsb.winfo_reqwidth() or 16)
+            win_w = FORM_W + (_vsb.winfo_reqwidth() or 16)
         else:
             _vsb.pack_forget()             # no overflow — don't reserve a scrollbar
-            win_w = 460
+            win_w = FORM_W
         if _centered[0]:
             # Keep the window where the user put it; just resize, clamping the
             # bottom edge back onto the screen if growth would push it off.
@@ -734,45 +862,36 @@ def show_session_form(
     late_text = None
     late_error_lbl = None
     if late_cutoff:
-        late_frame = tk.Frame(frame, bg="#fdecea", relief="flat", bd=0)
-        late_frame.pack(fill=tk.X, pady=(12, 0))
-        late_inner = tk.Frame(late_frame, bg="#fdecea")
-        late_inner.pack(fill=tk.X, padx=10, pady=8)
-        tk.Label(
-            late_inner,
-            text=f"🌙  It's past {late_cutoff} — what kept you working late?",
-            bg="#fdecea", fg="#c0392b", font=("", FS_SM, "bold"),
-            wraplength=400, justify=tk.LEFT,
+        late_card = _card(frame, bg=C_PRIMARY_SOFT, border="#f2c9c2")
+        late_card.pack(fill=tk.X, pady=(0, 18))
+        late_inner = tk.Frame(late_card, bg=C_PRIMARY_SOFT)
+        late_inner.pack(fill=tk.X, padx=14, pady=12)
+        _label(
+            late_inner, f"It's past {late_cutoff} — what kept you working late?",
+            bold=True, fg=C_PRIMARY_INK, wraplength=AVAIL - 30, justify=tk.LEFT,
         ).pack(anchor=tk.W)
-        tk.Label(
-            late_inner,
-            text="You'll see this note when your next study day begins. (Required)",
-            bg="#fdecea", fg="#a04a3d", font=("", FS_XS),
-            wraplength=400, justify=tk.LEFT,
-        ).pack(anchor=tk.W, pady=(0, 6))
+        _label(
+            late_inner, "You'll see this note when your next study day begins. (Required)",
+            size=FS_XS, fg=C_PRIMARY_INK, wraplength=AVAIL - 30, justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(2, 8))
         late_text = tk.Text(
-            late_inner, height=3, font=("", FS_SM), wrap=tk.WORD,
-            relief="solid", borderwidth=1,
+            late_inner, height=3, width=1, wrap=tk.WORD, padx=8, pady=6,
+            **_text_field_opts(),
         )
         late_text.pack(fill=tk.X)
-        late_error_lbl = tk.Label(
-            late_inner, text="⚠  Please add a note before saving.",
-            bg="#fdecea", fg="#c0392b", font=("", FS_XS),
-        )
+        late_error_lbl = _label(late_inner, "⚠  Please add a note before saving.",
+                                size=FS_XS, fg=C_PRIMARY_INK)
 
     # ── Buttons ───────────────────────────────────────────────────────────────
-    btn_frame = ttk.Frame(frame)
-    btn_frame.pack(fill=tk.X, pady=(16, 0))
-
     def _submit() -> None:
         term = term_var.get().strip()
         if not term:
-            term_error_lbl.pack(before=focus_sec_hdr, pady=(0, 6))
+            term_error_lbl.pack(anchor=tk.W, pady=(6, 0))
             _resize_to_fit()
             return
         topic = topic_var.get().strip()
         if not topic:
-            error_lbl.pack(before=btn_frame, pady=(0, 6))
+            error_lbl.pack(anchor=tk.W, pady=(6, 0))
             _resize_to_fit()
             return
         late_reason = late_text.get("1.0", tk.END).strip() if late_text is not None else None
@@ -781,7 +900,7 @@ def show_session_form(
             _resize_to_fit()
             return
         result[0] = {
-            "focus": max(1, min(10, int(float(focus_var.get())))),
+            "focus": max(1, min(10, focus_var.get())),
             "topic": topic,
             "term":  term,
             "distracted": distracted_var.get(),
@@ -812,8 +931,10 @@ def show_session_form(
             root.quit()
         # otherwise stay in the form so the session can still be saved
 
-    ttk.Button(btn_frame, text="Skip (don't log)", command=_skip).pack(side=tk.LEFT)
-    ttk.Button(btn_frame, text="💾  Save Session", command=_submit).pack(side=tk.RIGHT)
+    btn_frame = tk.Frame(footer, bg=C_CARD)
+    btn_frame.pack(fill=tk.X, padx=PAD, pady=(14, 18))
+    _Pill(btn_frame, "Skip, don't log", _skip, style="quiet", padx=4, pady=9).pack(side=tk.LEFT)
+    _Pill(btn_frame, "Save session", _submit, style="primary", size=FS_MD, padx=22, pady=8).pack(side=tk.RIGHT)
 
     root.protocol("WM_DELETE_WINDOW", _confirm_discard)
     root.bind("<Escape>", lambda _: _confirm_discard())
@@ -938,76 +1059,134 @@ def show_history_window() -> None:
         ttk.Button(log_bottom, text="Close", command=root.destroy).pack(side=tk.RIGHT)
 
         # ── Tab 2: Statistics ─────────────────────────────────────────────────
-        stats_tab = ttk.Frame(nb, padding=16)
+        stats_tab = ttk.Frame(nb)
         nb.add(stats_tab, text="  Statistics  ")
+        stats_body = tk.Frame(stats_tab, bg=C_BG, padx=20, pady=18)
+        stats_body.pack(fill=tk.BOTH, expand=True)
 
         total_s   = summary.get("total_sessions") or 0
         total_min = summary.get("total_minutes")  or 0
-        avg_focus = summary.get("avg_focus")       or "–"
+        avg_focus = summary.get("avg_focus")
         total_h   = f"{total_min // 60}h {total_min % 60}m" if total_min else "0m"
 
-        banner = ttk.LabelFrame(stats_tab, text="  Overall  ", padding=12)
-        banner.pack(fill=tk.X, pady=(0, 16))
-        for text in (
-            f"Sessions completed: {total_s}",
-            f"Total focus time:   {total_h}",
-            f"Average focus:      {avg_focus} / 10",
-        ):
-            ttk.Label(banner, text=text, font=("", FS_SM)).pack(anchor=tk.W, pady=1)
+        tiles = tk.Frame(stats_body, bg=C_BG)
+        tiles.pack(fill=tk.X)
+        for i, (cap, value, unit) in enumerate((
+            ("Sessions",      str(total_s),                                  ""),
+            ("Focus time",    total_h,                                       ""),
+            ("Average focus", str(avg_focus) if avg_focus is not None else "–", "/ 10"),
+        )):
+            tiles.columnconfigure(i, weight=1, uniform="tile")
+            tile = _card(tiles)
+            tile.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 12, 0))
+            t_in = tk.Frame(tile, bg=C_CARD)
+            t_in.pack(fill=tk.X, padx=18, pady=14)
+            _caption(t_in, cap).pack(anchor=tk.W)
+            t_val = tk.Frame(t_in, bg=C_CARD)
+            t_val.pack(anchor=tk.W)
+            _label(t_val, value, size=FS_XL, bold=True).pack(side=tk.LEFT)
+            if unit:
+                _label(t_val, unit, size=FS_MD, fg=C_INK_MUTED).pack(
+                    side=tk.LEFT, anchor="s", padx=(4, 0), pady=(0, 8))
 
-        cols_frame = ttk.Frame(stats_tab)
-        cols_frame.pack(fill=tk.BOTH, expand=True)
-        cols_frame.columnconfigure(0, weight=1)
-        cols_frame.columnconfigure(1, weight=1)
+        bar_cols = tk.Frame(stats_body, bg=C_BG)
+        bar_cols.pack(fill=tk.BOTH, expand=True, pady=(16, 0))
+        bar_cols.rowconfigure(0, weight=1)
 
-        tod_lf = ttk.LabelFrame(cols_frame, text="  Avg Focus by Time of Day  ", padding=10)
-        tod_lf.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        tod_tree = ttk.Treeview(
-            tod_lf, columns=("period", "avg", "count"), show="headings", height=6
-        )
-        tod_tree.heading("period", text="Period")
-        tod_tree.heading("avg",    text="Avg Focus")
-        tod_tree.heading("count",  text="Sessions")
-        tod_tree.column("period", width=190, anchor="w")
-        tod_tree.column("avg",    width=80,  anchor="center")
-        tod_tree.column("count",  width=70,  anchor="center")
-        tod_tree.pack(fill=tk.BOTH, expand=True)
-        for row in db.get_stats_by_time_of_day(tf):
-            tod_tree.insert("", tk.END, values=(row["period"], row["avg_focus"], row["sessions"]))
+        def _bar_card(col: int, title: str, legend: str) -> tk.Frame:
+            """A titled card whose row list scrolls once it outgrows the card."""
+            bar_cols.columnconfigure(col, weight=1, uniform="barcol")
+            card = _card(bar_cols)
+            card.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 12, 0))
+            head = tk.Frame(card, bg=C_CARD)
+            head.pack(fill=tk.X, padx=18, pady=(16, 12))
+            _label(head, title, size=FS_MD, bold=True).pack(side=tk.LEFT)
+            _label(head, legend, size=FS_XS, fg=C_INK_MUTED).pack(side=tk.RIGHT)
 
-        top_lf = ttk.LabelFrame(cols_frame, text="  Avg Focus by Topic  ", padding=10)
-        top_lf.grid(row=0, column=1, sticky="nsew")
-        top_tree = ttk.Treeview(
-            top_lf, columns=("topic", "avg", "count", "total"), show="headings", height=6
-        )
-        top_tree.heading("topic", text="Topic")
-        top_tree.heading("avg",   text="Avg Focus")
-        top_tree.heading("count", text="Sessions")
-        top_tree.heading("total", text="Total min")
-        top_tree.column("topic", width=140, anchor="w")
-        top_tree.column("avg",   width=75,  anchor="center")
-        top_tree.column("count", width=65,  anchor="center")
-        top_tree.column("total", width=70,  anchor="center")
-        tsb = ttk.Scrollbar(top_lf, orient="vertical", command=top_tree.yview)
-        top_tree.configure(yscrollcommand=tsb.set)
-        tsb.pack(side=tk.RIGHT, fill=tk.Y)
-        top_tree.pack(fill=tk.BOTH, expand=True)
-        for row in db.get_stats_by_topic(tf):
-            top_tree.insert(
-                "", tk.END,
-                values=(row["topic"], row["avg_focus"], row["sessions"], row["total_min"])
-            )
+            holder = tk.Frame(card, bg=C_CARD)
+            holder.pack(fill=tk.BOTH, expand=True, padx=(18, 8), pady=(0, 12))
+            cv = tk.Canvas(holder, bg=C_CARD, highlightthickness=0, bd=0, width=1, height=1)
+            sb = ttk.Scrollbar(holder, orient="vertical", command=cv.yview)
+            cv.configure(yscrollcommand=sb.set)
+            cv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            body = tk.Frame(cv, bg=C_CARD)
+            body_id = cv.create_window((0, 0), window=body, anchor="nw")
 
-        btn_bar = ttk.Frame(stats_tab)
-        btn_bar.pack(fill=tk.X, pady=(12, 0))
-        ttk.Button(btn_bar, text="↺  Refresh", command=_rebuild).pack(side=tk.LEFT)
-        ttk.Button(btn_bar, text="Close", command=root.destroy).pack(side=tk.RIGHT)
+            def _fit(_: object = None) -> None:
+                cv.itemconfigure(body_id, width=cv.winfo_width())
+                cv.configure(scrollregion=(0, 0, cv.winfo_width(), body.winfo_reqheight()))
+                if body.winfo_reqheight() > cv.winfo_height() > 1:
+                    if not sb.winfo_ismapped():
+                        sb.pack(side=tk.RIGHT, fill=tk.Y)
+                elif sb.winfo_ismapped():
+                    sb.pack_forget()
+
+            cv.bind("<Configure>", _fit)
+            body.bind("<Configure>", _fit)
+            body._scroll_canvas = cv   # read by _bar_row for wheel scrolling
+            _bind_wheel_yscroll_to(cv, cv)
+            _bind_wheel_yscroll_to(body, cv)
+            return body
+
+        def _bar_row(body: tk.Frame, label: str, value: float, value_text: str,
+                     color: str, dot: bool = False) -> None:
+            """Label and value on one line, a full-width 0–10 bar beneath."""
+            row = tk.Frame(body, bg=C_CARD)
+            row.pack(fill=tk.X, pady=(0, 14))
+            line = tk.Frame(row, bg=C_CARD)
+            line.pack(fill=tk.X)
+            if dot:
+                d = tk.Canvas(line, width=10, height=10, bg=C_CARD, highlightthickness=0, bd=0)
+                d.create_oval(0, 0, 9, 9, fill=color, outline="")
+                d.pack(side=tk.LEFT, padx=(0, 8))
+            short = label if len(label) <= 28 else label[:27] + "…"
+            _label(line, value_text, fg=C_TEXT_2).pack(side=tk.RIGHT)
+            _label(line, short, fg=C_TEXT_2, anchor="w").pack(side=tk.LEFT)
+            track = tk.Frame(row, bg=C_TRACK, height=8)
+            track.pack(fill=tk.X, pady=(6, 0))
+            tk.Frame(track, bg=color).place(relx=0, rely=0, relheight=1,
+                                           relwidth=max(0.0, min(1.0, value / 10)))
+            cv = body._scroll_canvas
+            for w in (row, line, track, *line.winfo_children()):
+                _bind_wheel_yscroll_to(w, cv)
+
+        def _empty(body: tk.Frame) -> None:
+            _label(body, "No rated sessions yet.", fg=C_INK_MUTED).pack(anchor=tk.W)
+
+        tod_body = _bar_card(0, "Focus by time of day", "avg · sessions")
+        tod_rows = db.get_stats_by_time_of_day(tf)
+        for row in tod_rows:
+            period = row["period"].split(" ", 1)[-1]   # drop the emoji prefix
+            _bar_row(tod_body, period, row["avg_focus"],
+                     f"{row['avg_focus']} · {row['sessions']}", C_PRIMARY)
+        if not tod_rows:
+            _empty(tod_body)
+
+        # Same colour per topic as the Daily Chart tab, which colours the
+        # sorted set of topics in that chart's data.
+        hist_data   = db.get_daily_by_topic(tf)
+        _chart_tops = sorted({r["topic"] for r in hist_data})
+        _top_color  = dict(zip(_chart_tops, _topic_palette(len(_chart_tops))))
+
+        top_body = _bar_card(1, "Focus by topic", "avg · total time")
+        top_rows = db.get_stats_by_topic(tf)
+        for row in top_rows:
+            mins = row["total_min"] or 0
+            _bar_row(top_body, row["topic"], row["avg_focus"],
+                     f"{row['avg_focus']} · {mins // 60}h {mins % 60:02d}m",
+                     _top_color.get(row["topic"], C_INK_MUTED), dot=True)
+        if not top_rows:
+            _empty(top_body)
+
+        btn_bar = tk.Frame(stats_body, bg=C_BG)
+        btn_bar.pack(fill=tk.X, pady=(14, 0))
+        _Pill(btn_bar, "↺  Refresh", _rebuild, style="secondary", padx=16, pady=7).pack(side=tk.LEFT)
+        _Pill(btn_bar, "Close", root.destroy, style="secondary", padx=16, pady=7).pack(side=tk.RIGHT)
 
         # ── Tab 3: Daily Histogram ────────────────────────────────────────────
         hist_tab = ttk.Frame(nb)
         nb.add(hist_tab, text="  Daily Chart  ")
 
-        hist_data = db.get_daily_by_topic(tf)
         if not hist_data:
             ttk.Label(hist_tab, text="No sessions recorded yet.",
                       font=("", FS_SM), foreground=C_MUTED).pack(expand=True)
