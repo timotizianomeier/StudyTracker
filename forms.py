@@ -624,8 +624,10 @@ def show_session_form(
     error_lbl = ttk.Label(frame, text="⚠  Please enter a topic before saving.", foreground="red", font=("", FS_SM))
 
     topic_var = tk.StringVar()
-    existing_topics = db.get_all_topics()
     chip_btns: dict[str, tk.Button] = {}
+    topic_chips_holder = ttk.Frame(topic_frame)
+    topic_chips_holder.pack(fill=tk.X)
+    _last_topic_term: list[str | None] = [None]
 
     def _on_topic_var_changed(*_: object) -> None:
         current = topic_var.get()
@@ -637,41 +639,58 @@ def show_session_form(
         if current.strip():
             error_lbl.pack_forget()
 
-    if existing_topics:
-        chips_outer = ttk.Frame(topic_frame)
-        chips_outer.pack(fill=tk.X, pady=(0, 8))
+    def _rebuild_topic_chips() -> bool:
+        cur_term = term_var.get().strip()
+        if cur_term == _last_topic_term[0]:
+            return False
+        _last_topic_term[0] = cur_term
 
-        AVAIL_W = 360
-        rows_of_topics: list[list[str]] = [[]]
-        row_w = 0
-        for _t in existing_topics:
-            _bw = len(_t) * 7 + 36
-            if row_w > 0 and row_w + _bw > AVAIL_W:
-                rows_of_topics.append([])
-                row_w = 0
-            rows_of_topics[-1].append(_t)
-            row_w += _bw
+        for child in topic_chips_holder.winfo_children():
+            child.destroy()
+        chip_btns.clear()
 
-        for _ri, _row_topics in enumerate(rows_of_topics):
-            _row_frame = ttk.Frame(chips_outer)
-            _row_frame.pack(fill=tk.X, anchor=tk.W, pady=(0 if _ri == 0 else 2, 0))
-            for _topic in _row_topics:
-                _btn = tk.Button(
-                    _row_frame, text=_topic, relief="flat",
-                    bg=C_CHIP_UNSEL_BG, fg=C_CHIP_UNSEL_FG,
-                    font=("", FS_SM), padx=8, pady=3, cursor="hand2", bd=0,
-                    command=lambda t=_topic: topic_var.set(t),
-                )
-                _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
-                chip_btns[_topic] = _btn
+        existing_topics = db.get_all_topics(term=cur_term) if cur_term else []
 
-        ttk.Label(topic_frame, text="Or add a new one:", foreground=C_MUTED, font=("", FS_XS)).pack(anchor=tk.W)
-    else:
-        ttk.Label(
-            topic_frame,
-            text="e.g.  Math homework · Work report · Reading",
-            foreground=C_MUTED, font=("", FS_XS),
-        ).pack(anchor=tk.W, pady=(0, 4))
+        if existing_topics:
+            chips_outer = ttk.Frame(topic_chips_holder)
+            chips_outer.pack(fill=tk.X, pady=(0, 8))
+
+            AVAIL_W = 360
+            rows_of_topics: list[list[str]] = [[]]
+            row_w = 0
+            for _t in existing_topics:
+                _bw = len(_t) * 7 + 36
+                if row_w > 0 and row_w + _bw > AVAIL_W:
+                    rows_of_topics.append([])
+                    row_w = 0
+                rows_of_topics[-1].append(_t)
+                row_w += _bw
+
+            for _ri, _row_topics in enumerate(rows_of_topics):
+                _row_frame = ttk.Frame(chips_outer)
+                _row_frame.pack(fill=tk.X, anchor=tk.W, pady=(0 if _ri == 0 else 2, 0))
+                for _topic in _row_topics:
+                    _btn = tk.Button(
+                        _row_frame, text=_topic, relief="flat",
+                        bg=C_CHIP_UNSEL_BG, fg=C_CHIP_UNSEL_FG,
+                        font=("", FS_SM), padx=8, pady=3, cursor="hand2", bd=0,
+                        command=lambda t=_topic: topic_var.set(t),
+                    )
+                    _btn.pack(side=tk.LEFT, padx=(0, 6), pady=(0, 2))
+                    chip_btns[_topic] = _btn
+
+            ttk.Label(topic_chips_holder, text="Or add a new one:", foreground=C_MUTED, font=("", FS_XS)).pack(anchor=tk.W)
+        else:
+            ttk.Label(
+                topic_chips_holder,
+                text="e.g.  Math homework · Work report · Reading",
+                foreground=C_MUTED, font=("", FS_XS),
+            ).pack(anchor=tk.W, pady=(0, 4))
+
+        _on_topic_var_changed()
+        return True
+
+    _rebuild_topic_chips()
     ttk.Entry(topic_frame, textvariable=topic_var, font=("", FS_SM)).pack(fill=tk.X)
     topic_var.trace_add("write", _on_topic_var_changed)
 
@@ -720,6 +739,12 @@ def show_session_form(
             _centered[0] = True
         root.update_idletasks()
         _canvas.configure(scrollregion=_canvas.bbox("all"))
+
+    def _on_term_update_topics(*_: object) -> None:
+        if _rebuild_topic_chips() and _centered[0]:
+            _resize_to_fit()
+
+    term_var.trace_add("write", _on_term_update_topics)
 
     def _toggle_reason(*_: object) -> None:
         if distracted_var.get():
