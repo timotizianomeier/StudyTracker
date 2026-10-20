@@ -113,13 +113,46 @@ def _bind_canvas_hscroll(canvas: tk.Canvas) -> None:
     canvas.bind("<Shift-MouseWheel>", _on_wheel)
 
 
-def _center_window(root: tk.Tk) -> None:
-    """Position the window in the center of the screen."""
+_TITLEBAR_H = 32   # macOS title bar height in Tk geometry coordinates
+
+
+def _usable_screen_bounds(root: tk.Tk) -> tuple[int, int, int, int]:
+    """Return (left, top, right, bottom) of the usable screen area in Tk
+    top-down coordinates, excluding the macOS menu bar and Dock.
+    """
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    try:
+        from AppKit import NSScreen
+        screen = NSScreen.mainScreen()
+        if screen is not None:
+            frame  = screen.frame()
+            vis    = screen.visibleFrame()
+            fh     = int(frame.size.height) or sh
+            left   = int(vis.origin.x)
+            top    = int(fh - (vis.origin.y + vis.size.height))
+            right  = int(vis.origin.x + vis.size.width)
+            bottom = int(fh - vis.origin.y)
+            return left, max(0, top), right, min(sh, bottom)
+    except Exception:
+        pass
+    return 0, 34, sw, sh - 80
+
+
+def _center_window(root: tk.Tk, y_bias: float = 0.30) -> None:
+    """Position the window horizontally centered and in the upper-middle of the
+    usable screen area (between the menu bar and the Dock).
+    """
     root.update_idletasks()
     w = root.winfo_width()
     h = root.winfo_height()
-    x = (root.winfo_screenwidth() - w) // 2
-    y = (root.winfo_screenheight() - h) // 2
+    left, top, right, bottom = _usable_screen_bounds(root)
+    avail_w = max(1, right - left)
+    avail_h = max(1, bottom - top)
+    outer_h = h + _TITLEBAR_H
+    x = left + max(0, (avail_w - w) // 2)
+    y = top + max(12, int((avail_h - outer_h) * y_bias))
+    y = max(top + 8, min(y, bottom - outer_h - 12))
     root.geometry(f"+{x}+{y}")
     root.deiconify()
 
@@ -719,8 +752,10 @@ def show_session_form(
     def _resize_to_fit() -> None:
         root.update_idletasks()
         req_h = frame.winfo_reqheight()
-        max_h = int(root.winfo_screenheight() * 0.85)
-        win_h = min(req_h, max_h)          # cap so the window never exceeds the screen
+        _, work_top, _, work_bottom = _usable_screen_bounds(root)
+        usable_h = max(200, work_bottom - work_top - _TITLEBAR_H - 24)
+        max_h = min(int(root.winfo_screenheight() * 0.80), usable_h)
+        win_h = min(req_h, max_h)          # cap so the window fits above the Dock
         if req_h > max_h:
             _vsb.pack(side=tk.RIGHT, fill=tk.Y, before=_canvas)
             win_w = 460 + (_vsb.winfo_reqwidth() or 16)
@@ -729,9 +764,9 @@ def show_session_form(
             win_w = 460
         if _centered[0]:
             # Keep the window where the user put it; just resize, clamping the
-            # bottom edge back onto the screen if growth would push it off.
+            # bottom edge above the Dock if growth would push it off.
             x, y = root.winfo_x(), root.winfo_y()
-            y = max(0, min(y, root.winfo_screenheight() - win_h))
+            y = max(work_top + 8, min(y, work_bottom - (win_h + _TITLEBAR_H) - 12))
             root.geometry(f"{win_w}x{win_h}+{x}+{y}")
         else:
             root.geometry(f"{win_w}x{win_h}")
