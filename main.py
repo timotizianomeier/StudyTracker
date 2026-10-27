@@ -236,8 +236,10 @@ class PomodoroApp(rumps.App):
             start_data = self._start_queue.get_nowait()
             self.session_minutes = start_data["minutes"]
             self._session_interrupts_disabled = start_data.get("disable_interrupts", False)
-            if self._session_interrupts_disabled:
-                self._interrupts_item.title = "    Interrupts"
+            self.interrupts_on = not self._session_interrupts_disabled
+            self._interrupts_item.title = (
+                "✓  Interrupts" if self.interrupts_on else "    Interrupts"
+            )
             self.is_paused = False
             self._distractions.clear()
             self._session_start_time = datetime.now()
@@ -416,10 +418,9 @@ class PomodoroApp(rumps.App):
             self._distract_item.set_callback(None)
             self._pause_item.title = "⏸  Pause Session"
             self._status_item.title = "No session running"
+            self.interrupts_on = True
             self._session_interrupts_disabled = False
-            self._interrupts_item.title = (
-                "✓  Interrupts" if self.interrupts_on else "    Interrupts"
-            )
+            self._interrupts_item.title = "✓  Interrupts"
 
     # ── Menu callbacks ────────────────────────────────────────────────────────
 
@@ -658,9 +659,12 @@ class PomodoroApp(rumps.App):
 
     def _toggle_interrupts(self, _: rumps.MenuItem) -> None:
         self.interrupts_on = not self.interrupts_on
+        self._session_interrupts_disabled = not self.interrupts_on
         self._interrupts_item.title = (
             "✓  Interrupts" if self.interrupts_on else "    Interrupts"
         )
+        if self.is_running and not self.is_paused and self.interrupts_on:
+            threading.Thread(target=self._check_blocked_apps_at_start, daemon=True).start()
 
     def _configure(self, _: rumps.MenuItem) -> None:
         # Run in a background thread so the menu bar stays responsive.

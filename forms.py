@@ -271,10 +271,6 @@ def show_start_window(current_minutes: int, interrupts_on: bool = True) -> dict 
         variable=disable_interrupts_var,
     )
     interrupts_check.pack(anchor=tk.W, pady=(8, 0))
-    if not interrupts_on:
-        # Already disabled globally via the menu-bar toggle - reflect that
-        # here instead of letting the user uncheck a box that has no effect.
-        interrupts_check.state(["disabled"])
 
     def _start() -> None:
         result[0] = {
