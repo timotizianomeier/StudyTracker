@@ -403,6 +403,26 @@ def get_focus_vs_start_time(term: str | None = None) -> list[sqlite3.Row]:
         """, tp).fetchall()
 
 
+def get_last_day_avg_focus() -> float | None:
+    """Return the duration-weighted average focus for the most recent day with
+    recorded focus data (today if a session was already logged today, otherwise
+    the last recorded day), or None if no sessions exist.
+    """
+    with _connect() as conn:
+        row = conn.execute("""
+            SELECT
+                ROUND(SUM(focus * duration) * 1.0 / NULLIF(SUM(duration), 0), 2) AS avg_focus
+            FROM sessions
+            WHERE focus IS NOT NULL
+              AND DATE(timestamp) = (
+                  SELECT DATE(MAX(timestamp))
+                  FROM sessions
+                  WHERE focus IS NOT NULL
+              )
+        """).fetchone()
+    return row["avg_focus"] if row and row["avg_focus"] is not None else None
+
+
 def get_summary(term: str | None = None) -> dict:
     tc, tp = _term_where(term)
     with _connect() as conn:

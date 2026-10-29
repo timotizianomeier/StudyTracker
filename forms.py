@@ -614,8 +614,7 @@ def show_session_form(
     focus_frame = ttk.Frame(frame)
     focus_frame.pack(fill=tk.X, pady=(0, 4))
 
-    _summary = db.get_summary()
-    _avg = _summary.get("avg_focus")
+    _avg = db.get_last_day_avg_focus()
     default_focus = float(max(1, min(10, round(_avg))) if _avg else 7)
 
     focus_var = tk.DoubleVar(value=default_focus)
