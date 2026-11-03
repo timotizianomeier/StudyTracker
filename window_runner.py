@@ -106,11 +106,21 @@ def main() -> None:
 
     elif window == "schedule_greeting":
         payload = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+        if not payload.get("met") and "items" not in payload:
+            try:
+                import schedule_goals
+                fresh = schedule_goals.evaluate_previous_day()
+                if fresh and not fresh.get("met"):
+                    payload = fresh
+            except Exception:
+                pass
         from forms import show_schedule_greeting
         show_schedule_greeting(
             met=bool(payload.get("met")),
             headline=payload.get("headline", ""),
             detail=payload.get("detail", ""),
+            items=payload.get("items"),
+            footer=payload.get("footer"),
         )
 
     elif window == "schedule_settings":

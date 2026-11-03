@@ -2385,11 +2385,19 @@ def show_app_blocker_settings() -> dict | None:
 
 # ─── Schedule goals: morning greeting ─────────────────────────────────────────
 
-def show_schedule_greeting(met: bool, headline: str, detail: str) -> None:
+def show_schedule_greeting(
+    met: bool,
+    headline: str,
+    detail: str,
+    items: list[dict] | None = None,
+    footer: str | None = None,
+) -> None:
     """Output-only modal shown on the first session start of a new day.
 
     ``met`` picks the celebratory vs. encouraging styling; ``headline`` and
     ``detail`` are pre-composed by the caller (which owns the schedule config).
+    When ``items`` is provided (unmet goals), each missed goal (morning start /
+    evening cutoff) is rendered in its own visual card for readability.
     """
     root = tk.Tk()
     root.withdraw()
@@ -2412,12 +2420,47 @@ def show_schedule_greeting(met: bool, headline: str, detail: str) -> None:
     ttk.Label(frame, text=emoji, font=("", 40)).pack(pady=(0, 6))
     tk.Label(
         frame, text=headline, font=("", FS_MD, "bold"),
-        fg=accent, wraplength=360, justify=tk.CENTER,
-    ).pack(pady=(0, 8))
-    ttk.Label(
-        frame, text=detail, font=("", FS_SM), foreground=C_MUTED,
-        wraplength=360, justify=tk.CENTER,
-    ).pack(pady=(0, 20))
+        fg=accent, wraplength=380, justify=tk.CENTER,
+    ).pack(pady=(0, 12 if items else 8))
+
+    if items:
+        cards_outer = ttk.Frame(frame)
+        cards_outer.pack(fill=tk.X, pady=(0, 12))
+        for idx, item in enumerate(items):
+            card = tk.Frame(
+                cards_outer, bg="#fdecea", highlightbackground="#f5c6cb",
+                highlightthickness=1, bd=0,
+            )
+            card.pack(fill=tk.X, pady=(0 if idx == 0 else 8, 0))
+            inner = tk.Frame(card, bg="#fdecea")
+            inner.pack(fill=tk.X, padx=14, pady=10)
+
+            lbl_text = f"{item.get('icon', '')}  {item.get('label', '').upper()}".strip()
+            tk.Label(
+                inner, text=lbl_text, bg="#fdecea", fg="#a04a3d",
+                font=("", FS_XS, "bold"), anchor="w", justify=tk.LEFT,
+            ).pack(anchor=tk.W)
+            tk.Label(
+                inner, text=item.get("summary", ""), bg="#fdecea", fg="#2b2b2b",
+                font=("", FS_SM, "bold"), wraplength=350, justify=tk.LEFT,
+            ).pack(anchor=tk.W, pady=(2, 0))
+            reason = item.get("reason")
+            if reason:
+                tk.Label(
+                    inner, text=f"Note: “{reason}”", bg="#fdecea", fg="#5d4037",
+                    font=("", FS_SM), wraplength=350, justify=tk.LEFT,
+                ).pack(anchor=tk.W, pady=(4, 0))
+
+        if footer:
+            ttk.Label(
+                frame, text=footer, font=("", FS_SM), foreground=C_MUTED,
+                wraplength=380, justify=tk.CENTER,
+            ).pack(pady=(0, 18))
+    else:
+        ttk.Label(
+            frame, text=detail, font=("", FS_SM), foreground=C_MUTED,
+            wraplength=360, justify=tk.CENTER,
+        ).pack(pady=(0, 20))
 
     def _dismiss() -> None:
         root.quit()

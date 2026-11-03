@@ -123,12 +123,19 @@ def evaluate_previous_day(today: date | None = None) -> dict | None:
 
         headline = "Let's tighten up the schedule today."
         parts: list[str] = []
+        items: list[dict] = []
         if not started_early:
             s = f"{when.capitalize()} you started at {fs} (goal {start_by})."
             reason = log.get("late_start_reason")
             if reason:
                 s += f" You noted: “{reason}”"
             parts.append(s)
+            items.append({
+                "icon": "☀️",
+                "label": f"Morning start · Goal {start_by}",
+                "summary": f"Started at {fs} {when}",
+                "reason": reason or None,
+            })
         if not finished_ontime:
             lead = "You worked until" if parts else f"{when.capitalize()} you worked until"
             s = f"{lead} {le} (goal {end_by})."
@@ -136,9 +143,21 @@ def evaluate_previous_day(today: date | None = None) -> dict | None:
             if reason:
                 s += f" You noted: “{reason}”"
             parts.append(s)
-        parts.append(
-            f"Aim to be underway before {start_by} and done by {end_by} today."
-        )
-        detail = " ".join(parts)
+            items.append({
+                "icon": "🌙",
+                "label": f"Evening cutoff · Goal {end_by}",
+                "summary": f"Worked until {le} {when}",
+                "reason": reason or None,
+            })
+        footer = f"Aim to be underway before {start_by} and done by {end_by} today."
+        parts.append(footer)
+        detail = "\n\n".join(parts)
+        return {
+            "met": met_last,
+            "headline": headline,
+            "detail": detail,
+            "items": items,
+            "footer": footer,
+        }
 
     return {"met": met_last, "headline": headline, "detail": detail}
