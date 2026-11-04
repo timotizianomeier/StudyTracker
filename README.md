@@ -1,260 +1,172 @@
 # 🍅 Pomodoro Tracker
 
-A macOS menu bar app for tracking focused work sessions. Built with Python, it lives quietly in your menu bar, runs timed Pomodoro sessions, fires a native macOS notification with sound when time is up, and prompts you to log how the session went. All data is stored locally in SQLite — no network, no accounts.
+A lightweight macOS menu bar app for tracking focused study and work sessions. Built with Python, it lives quietly in your menu bar, runs timed Pomodoro sessions, blocks distracting apps while you work, tracks your daily schedule goals, and prompts you to log how each session went. All data is stored locally in SQLite — no network, no accounts.
 
 ---
 
-## What it does
+## ⚡ Quick Start (macOS)
 
-- **Pomodoro timer** in the menu bar with a live countdown (`🍅 24:59`)
-- **Configurable session length** via a slider (5–55 min, default 25 min)
-- **Pause & resume** a session at any time without losing progress
-- **Toggle the countdown display** — show only the 🍅 icon if you find the clock distracting
-- **Native macOS notification with sound** when the session ends
-- **Post-session popup form** asking:
-  - Focus rating (1–10 slider)
-  - Term (academic term / semester label, remembered across sessions)
-  - Topic / project label (optional free text)
-  - Whether you got distracted, and if so why
-- **Mid-session distraction logging** — record what distracted you in the moment; entries are shown in the post-session form so you can reflect on them
-- **Screen-lock awareness** — if your screen locks mid-session, you're asked on unlock whether you took a break or kept working; the timer adjusts accordingly
-- **App Blocker** — automatically quits distracting apps when a session starts, and closes any that are opened mid-session (see [App Blocker](#app-blocker))
-- **Interrupts toggle** — switch app-blocker interruptions off globally from the menu, or just for one session via a checkbox in the start dialog
-- **Shutdown guard** — macOS shutdown, restart, or logout is blocked while a session is running; stop the session (or quit the app) first
-- **Session history** with a full log table and summary statistics:
-  - Average focus by time of day (morning / afternoon / evening / night)
-  - Average focus by topic and by term
-  - Total sessions, total focus time, overall average focus rating
-  - Daily study-time histogram by topic
-- **Insights (Beta)** — distraction analytics window:
-  - Top distraction words (frequency table with visual bar)
-  - Distraction rate by hour of day and day of week
-  - Weekly distraction rate trend line chart
-- **Guided meditations** accessible any time from the menu:
-  - 💨 **Breathing Exercise (1 min)** — animated box breathing (4 s inhale · 4 s hold · 4 s exhale · 4 s hold)
-  - 🌿 **5-4-3-2-1 Grounding** — step-by-step sensory grounding with emoji cues and optional text fields
-
----
-
-## Requirements
-
-- macOS 13 or later
-- Python 3.10 or later (`python3 --version` to check)
-- Dependencies listed in `requirements.txt` (installed via pip)
-
----
-
-## Installation
-
-Using a virtual environment is strongly recommended — it avoids permission errors and keeps dependencies isolated.
+Open **Terminal** and copy-paste the following commands:
 
 ```bash
-# 1. Clone or download the project
-cd /path/to/StudyTracker
+# 1. Clone the repository
+git clone https://github.com/timotizianomeier/StudyTracker.git
+cd StudyTracker
 
-# 2. Create and activate a virtual environment
+# 2. Verify your Python has tkinter (used for popup windows)
+python3 -c "import tkinter"
+```
+
+> **If step 2 prints `No module named '_tkinter'`:**
+> - **Using Homebrew Python?** Run: `brew install python-tk`
+> - **Otherwise:** Install Python from [python.org/downloads/macos](https://www.python.org/downloads/macos/) (includes `tkinter` out of the box).
+
+Then create the virtual environment, install dependencies, and launch the app:
+
+```bash
+# 3. Create & activate a virtual environment, install dependencies, and run
 python3 -m venv .venv
 source .venv/bin/activate
-
-# 3. Install dependencies
 pip install -r requirements.txt
-
-# 4. Run
 python3 main.py
 ```
 
-The `🍅` icon will appear in your **menu bar** (top-right of the screen) — the app has no Dock icon by design.
+Look at the **top-right menu bar** of your screen — you'll see a **`🍅`** icon! (The app has no Dock icon by design.)
 
-The SQLite database is created automatically at `~/.pomodoro_tracker.db` on first launch. App blocker preferences are stored at `~/.pomodoro_tracker_config.json`.
+### Starting it next time
 
-> **Each time you open a new terminal**, re-activate the virtual environment before running:
-> ```bash
-> source .venv/bin/activate
-> python3 main.py
-> ```
+Whenever you want to launch the app again from a new terminal:
+
+```bash
+cd /path/to/StudyTracker
+source .venv/bin/activate
+python3 main.py
+```
+
+Or run it **in the background** so you can close the terminal window:
+
+```bash
+cd /path/to/StudyTracker && ./.venv/bin/python3 main.py >/dev/null 2>&1 &
+```
 
 ---
 
-## Usage
+## ✨ What It Does
+
+- **Menu bar Pomodoro timer** with a live countdown (`🍅 24:59`)
+- **Configurable session length** via a slider (5–55 min, default 25 min)
+- **Pause & resume** a session at any time without losing progress
+- **Toggle the countdown display** — show only the `🍅` icon if you find the clock distracting
+- **Native macOS notification with sound** when a session finishes
+- **Post-session popup form**:
+  - **Term** chip selector (remembers your most recent term, or lets you add a new one)
+  - **Focus rating** (1–10 slider, pre-set to today's average focus — or your last active day's average on your first session of the day)
+  - **Topic / Project** chip selector (automatically filtered to show only topics from the selected term, plus an input to add a new topic)
+  - **Distraction log** — review mid-session distractions and optionally note what distracted you
+  - **Accidental-discard guard** — asks for confirmation if you press `Esc` or close the window before saving
+- **Mid-session distraction capture (`💭 Record Distraction`)** — jot down a distracting thought in 2 seconds and get right back to focus; replayed when the session ends
+- **Daily Schedule Goals (`🎯 Schedule Goals…`)**:
+  - Set your target daily working window (default: start by `09:00`, finish by `18:00`)
+  - **First-session daily check-in**: When you start your first session of the day, see a recap of your previous active study day — celebrating multi-day streaks when you hit your window, or showing clear cards for missed morning-start / evening-cutoff goals along with the notes you left yourself
+  - **Late-start & past-cutoff reflection**: Prompts for a short note if your first session starts after your morning goal or if a session finishes past your evening cutoff
+- **Screen-lock awareness** — if you lock your screen mid-session, asks on unlock whether you took a break (rewinds timer) or kept studying (keeps elapsed time)
+- **App Blocker** — automatically quits distracting apps when a session starts and blocks them if opened mid-session (see [App Blocker](#-app-blocker))
+- **Per-session Interrupts toggle** — interrupts default to **on** for every new session; disable them for the current session via the Start Session checkbox or the `✓ Interrupts` menu item, and they automatically reset to **on** when the session ends
+- **Shutdown guard** — blocks macOS shutdown/restart/logout while a session is actively running so a session isn't lost accidentally
+- **Session History (`📋 View History`)** — full log table, filterable by term, with summary stats and an interactive daily study chart (clickable topic legend & gap-aware timeline)
+- **Insights (`🔍 Insights (Beta)`)** — distraction analytics & focus-vs-start-time charts
+- **Guided meditations (`🧘 Meditate`)** — **Breathing Exercise (1 min)** and **5-4-3-2-1 Grounding** available any time from the menu bar
+
+---
+
+## 🧭 Usage
 
 ### Menu items
 
 | Menu item | What it does |
 |---|---|
-| `▶ Start Session` | Opens a duration picker (with a "Disable interrupts for this session" checkbox), then starts the countdown |
+| `▶ Start Session` | Opens the duration picker (with a *"Disable interrupts for this session"* checkbox), runs the daily schedule check-in on your first session of the day, and starts the countdown |
 | `⏸ Pause Session` | Freezes the timer; label changes to `▶ Resume Session` |
 | `▶ Resume Session` | Resumes a paused session |
-| `⏹ Stop Session` | Cancels the session (asks to log it if ≥ 5 minutes elapsed) |
-| `💭 Record Distraction` | Log what just distracted you mid-session; replayed in the post-session form |
-| `✓ Show countdown` | Toggles the clock display; when off, only the icon is shown |
-| `🔇 / 🔊 Play sound` | Toggles the completion sound |
-| `✓ Interrupts` | Globally toggles app-blocker interruptions on/off |
-| `⚙ Configuration ▶` | Submenu: `⏱ Session Duration…` (5–55 min slider) and `🚫 App Blocker…` |
-| `📋 View History` | Full session log, statistics, and daily chart |
-| `🔍 Insights (Beta)` | Distraction analytics window |
-| `🧘 Meditate ▶` | Submenu with two guided meditations (available any time) |
-| `Quit` | Exit the app |
-
-### Menu bar icon guide
-
-| Display | Meaning |
-|---|---|
-| `🍅` | Idle — no session running |
-| `🍅 22:14` | Session running, 22 min 14 s remaining |
-| `⏸ 22:14` | Session paused at 22 min 14 s |
-| `⏸` | Session paused, countdown display off |
-
-### Typical workflow
-
-1. Click `▶ Start Session`, set your duration, and get to work.
-2. The menu bar shows the remaining time (`🍅 22:14`). Any blocked apps are automatically closed.
-3. If something distracts you, click `💭 Record Distraction` to note it without breaking flow.
-4. When the timer hits zero, a macOS notification plays a sound and a popup form appears.
-5. Rate your focus, add a topic, review any logged distractions, then hit **Save Session**.
-6. Review trends via **View History** or dig into distractions via **Insights (Beta)**.
+| `⏹ Stop Session` | Ends the session early (prompts to log it if ≥ 5 minutes elapsed) |
+| `💭 Record Distraction` | Quick popup to note what distracted you mid-session |
+| `✓ Show countdown` | Toggles the `MM:SS` countdown next to the `🍅` icon |
+| `✓ Play sound` | Toggles the completion sound |
+| `✓ Interrupts` | Toggles app-blocker interruptions on/off for the current session (resets to **on** after each session) |
+| `📋 View History` | Opens session history, statistics, and daily topic chart |
+| `🔍 Insights (Beta)` | Opens distraction & focus analytics |
+| `🧘 Meditate ▶` | `💨 Breathing Exercise (1 min)` and `🌿 5-4-3-2-1 Grounding` |
+| `⚙ Configuration ▶` | `⏱ Session Duration…`, `🚫 App Blocker…`, and `🎯 Schedule Goals…` |
+| `Quit` | Exits the menu bar app |
 
 ---
 
-## App Blocker
+## 🚫 App Blocker
 
-The app blocker helps keep distracting apps off your screen during focus sessions.
+The app blocker keeps distracting apps off your screen during focus sessions.
 
 **Default blocked apps:** WhatsApp, Mail, Messages, Slack, Discord, Telegram, Microsoft Teams, Microsoft Outlook, Mimestream, Spark.
 
-**How it works:**
+- **On session start** (or when re-enabling interrupts mid-session): any running blocked apps are quit gracefully.
+- **Mid-session**: if a blocked app is launched or brought to the front, a warning dialog appears and closes it.
+- **Customize**: Click `⚙ Configuration → 🚫 App Blocker…` to enable/disable blocking or edit the app list. Use the exact app name shown in the Dock / Activity Monitor.
 
-- **On session start** — any blocked apps that are already running are quit automatically (gracefully, as if you quit them yourself).
-- **Mid-session** — if a blocked app is opened or brought to the front, it is immediately quit and a brief popup confirms this.
-
-**To configure:** Click `⚙ Configuration → 🚫 App Blocker…` in the menu. You can enable/disable the feature and add or remove apps from the list. App names must match exactly what macOS shows (the name as it appears in the Dock or Activity Monitor).
-
-**Turning interruptions off temporarily:** Untick `✓ Interrupts` in the menu to disable app blocking globally without touching your app list, or tick **Disable interrupts for this session** in the start dialog to skip blocking for a single session.
-
-> **Automation permission:** The first time the app blocker quits an app, macOS will show a prompt: *"python3 wants to control [App]."* Click **OK** to grant it. If you accidentally denied it, go to **System Settings → Privacy & Security → Automation** and enable it for Python.
+> **macOS Automation Permission:** The first time the app blocker quits an app, macOS will ask: *"Python wants to control [App]."* Click **Allow**. You can manage this anytime in **System Settings → Privacy & Security → Automation**.
 
 ---
 
-## Troubleshooting
+## 🛠 Troubleshooting
 
-### The app doesn't appear in the menu bar
+### 1. `ModuleNotFoundError: No module named '_tkinter'`
+Your Python installation doesn't have the Tk GUI library installed.
+- If you use **Homebrew**:
+  ```bash
+  brew install python-tk
+  ```
+  Then recreate the virtual environment (`rm -rf .venv && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`).
+- Or install the official macOS Python from [python.org/downloads/macos](https://www.python.org/downloads/macos/), which bundles `tkinter`.
 
-- Make sure you ran `python3 main.py` and it's still running (it has no Dock icon).
-- Check that you're looking in the menu bar at the **top-right** of your screen — it may be hidden if the bar is full. Try hiding other menu bar items to make room.
-- If you see an error in the terminal, check the common errors below.
-
-### `ModuleNotFoundError: No module named 'rumps'` (or any other module)
-
-You either haven't installed dependencies or your virtual environment isn't active:
-
+### 2. `ModuleNotFoundError: No module named 'rumps'`
+Your virtual environment isn't activated, or dependencies aren't installed yet:
 ```bash
-source .venv/bin/activate   # activate the venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python3 main.py
 ```
 
-If you skipped the virtual environment and used `pip install` directly, make sure `pip` and `python3` refer to the same Python:
+### 3. The `🍅` icon doesn't appear
+- Look at the **top-right menu bar** (not the Dock).
+- On MacBooks with a camera notch, if you have many menu bar icons, macOS may hide new icons behind the notch — try quitting or hiding a few menu bar extras.
 
+### 4. Multiple `🍅` icons in the menu bar
+More than one instance is running. Stop all instances and start a single one:
 ```bash
-python3 -m pip install -r requirements.txt
+pkill -f "main.py"
 python3 main.py
 ```
 
-### `pip install` fails or says "externally managed environment"
-
-macOS Ventura and later protect the system Python. Use a virtual environment (see [Installation](#installation)), or if you installed Python via Homebrew:
-
-```bash
-pip install --break-system-packages -r requirements.txt
-```
-
-### App blocker doesn't close apps / nothing happens
-
-1. Check that app blocking is enabled: `⚙ Configuration → 🚫 App Blocker…` → **Enable app blocking warnings** should be ticked.
-2. Check that `✓ Interrupts` is ticked in the menu, and that you didn't tick **Disable interrupts for this session** when starting the session.
-3. Verify the app name matches exactly — open Activity Monitor, find the app, and use the name shown there.
-4. Grant Automation permission: **System Settings → Privacy & Security → Automation** → enable entries under Python.
-
-### My Mac won't shut down / restart
-
-A running session blocks shutdown, restart, and logout by design (you'll get a "Shutdown blocked" notification). Stop the session or quit the app via its `Quit` menu item, then shut down.
-
-### Notifications don't appear
-
-Go to **System Settings → Notifications** and make sure Python (or Script Editor) is allowed to send notifications. The first notification prompt may have appeared behind other windows.
-
-### Multiple 🍅 icons in the menu bar
-
-You have more than one instance running. Quit all of them and restart:
-
-```bash
-pkill -f "python3 main.py"
-python3 main.py
-```
-
-### Database errors on launch
-
-If you pulled new code, a schema migration may be needed:
-
-```bash
-alembic upgrade head
-```
+### 5. Notifications don't appear
+Open **System Settings → Notifications** and allow notifications for **Python** (the completion chime still plays via `afplay` even if banner notifications are disabled).
 
 ---
 
-## Project structure
+## 📁 Project Structure & Local Data
 
-```
+```text
 StudyTracker/
-├── main.py          # rumps menu bar app, timer logic, app blocker
-├── forms.py         # All tkinter UI (all windows and dialogs)
-├── db.py            # SQLite setup, writes, and aggregation queries
-├── config.py        # Persistent JSON config (app blocker settings)
-├── window_runner.py # Subprocess host for tkinter windows
-├── alembic/         # Database migrations
-│   └── versions/
-├── alembic.ini
-├── requirements.txt
+├── main.py            # rumps menu bar app, timer loop, screen-lock & app-blocker observers
+├── forms.py           # All tkinter windows, dialogs, and charts
+├── schedule_goals.py  # Daily start/cutoff schedule-goal evaluation logic
+├── db.py              # SQLite persistence & analytics queries
+├── config.py          # JSON config persistence (app blocker & schedule goals)
+├── window_runner.py   # Subprocess launcher for tkinter windows
+├── alembic/           # Optional database migrations
+├── requirements.txt   # Python dependencies
 └── README.md
 ```
 
----
+All data stays on your Mac:
+- **Database**: `~/.pomodoro_tracker.db` (created automatically on first launch)
+- **Settings**: `~/.pomodoro_tracker_config.json` (blocked apps & schedule goals)
 
-## Data
-
-Sessions are stored in `~/.pomodoro_tracker.db`:
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | INTEGER | Auto-incremented primary key |
-| `start_time` | TEXT | ISO-8601 datetime when the session started |
-| `timestamp` | TEXT | ISO-8601 datetime when the session ended |
-| `duration` | INTEGER | Session length in minutes |
-| `focus` | INTEGER | Focus rating 1–10 (NULL if skipped) |
-| `topic` | TEXT | Optional topic or project label |
-| `term` | TEXT | Academic term / semester label |
-| `distracted` | INTEGER | 1 if distracted, 0 otherwise |
-| `reason` | TEXT | Optional distraction reason |
-
-App blocker preferences are stored separately in `~/.pomodoro_tracker_config.json`.
-
-To apply schema migrations after pulling updates:
-
-```bash
-alembic upgrade head
-```
-
-You can query the database directly with any SQLite tool:
-
-```bash
-sqlite3 ~/.pomodoro_tracker.db "SELECT * FROM sessions ORDER BY timestamp DESC LIMIT 10;"
-```
-
----
-
-## Stopping the app
-
-Click `Quit` in the menu, or from the terminal:
-
-```bash
-pkill -f "python3 main.py"
-```
+To stop the app at any time, click **`Quit`** in the `🍅` menu or run `pkill -f "main.py"`.
